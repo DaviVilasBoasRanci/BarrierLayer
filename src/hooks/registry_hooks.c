@@ -15,17 +15,16 @@
 typedef long (*RegOpenKeyExW_f)(void*, const wchar_t*, unsigned long, unsigned long, void**);
 static RegOpenKeyExW_f real_RegOpenKeyExW = NULL;
 
+// Hook para RegOpenKeyExW
 long RegOpenKeyExW(void* hKey, const wchar_t* lpSubKey, unsigned long ulOptions, unsigned long samDesired, void** phkResult) {
     if (!real_RegOpenKeyExW) {
         real_RegOpenKeyExW = dlsym(RTLD_NEXT, "RegOpenKeyExW");
     }
-
     char subKey[512] = {0};
     wcstombs(subKey, lpSubKey, sizeof(subKey) - 1);
     char msg[256];
     snprintf(msg, sizeof(msg), "HOOK: RegOpenKeyExW | Chave: %s", subKey);
     logger_log(LOG_PATH, msg);
-
     if (real_RegOpenKeyExW) {
         return real_RegOpenKeyExW(hKey, lpSubKey, ulOptions, samDesired, phkResult);
     } else {

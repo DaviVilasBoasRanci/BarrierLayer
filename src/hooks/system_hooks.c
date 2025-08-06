@@ -18,11 +18,11 @@
 typedef unsigned long (*NtQuerySystemInformation_f)(unsigned int, void*, unsigned long, unsigned long*);
 static NtQuerySystemInformation_f real_NtQuerySystemInformation = NULL;
 
+// Hook para NtQuerySystemInformation
 unsigned long NtQuerySystemInformation(unsigned int SystemInformationClass, void* SystemInformation, unsigned long SystemInformationLength, unsigned long* ReturnLength) {
     if (!real_NtQuerySystemInformation) {
         real_NtQuerySystemInformation = dlsym(RTLD_NEXT, "NtQuerySystemInformation");
     }
-
     const char* class_name = "Classe Desconhecida";
     switch (SystemInformationClass) {
         case SystemProcessInformation: class_name = "SystemProcessInformation (5)"; break;
@@ -36,7 +36,6 @@ unsigned long NtQuerySystemInformation(unsigned int SystemInformationClass, void
         snprintf(msg, sizeof(msg), "HOOK: NtQuerySystemInformation | Classe: %s", class_name);
     }
     logger_log(LOG_PATH, msg);
-
     if (real_NtQuerySystemInformation) {
         return real_NtQuerySystemInformation(SystemInformationClass, SystemInformation, SystemInformationLength, ReturnLength);
     } else {
