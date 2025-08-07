@@ -48,6 +48,7 @@ void ultra_logger_stats(ultra_logger_stats_t *stats);
 #define ULTRA_WARN(category, ...) ultra_log(ULTRA_LOG_WARNING, category, __VA_ARGS__)
 #define ULTRA_ERROR(category, ...) ultra_log(ULTRA_LOG_ERROR, category, __VA_ARGS__)
 #define ULTRA_FATAL(category, ...) ultra_log(ULTRA_LOG_FATAL, category, __VA_ARGS__)
+#define ULTRA_SUCCESS(category, ...) ultra_log(ULTRA_LOG_INFO, category, "✅ " __VA_ARGS__)
 
 // Macros específicas
 #define LOG_SYSCALL(name, nr, args, ret, details) \
