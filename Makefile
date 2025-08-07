@@ -1,7 +1,7 @@
 CC = gcc
 AS = nasm
 LDFLAGS = -ldl -lseccomp -pthread
-CFLAGS = -Isrc/include -Wall -Wextra -g -D_GNU_SOURCE -fPIC
+CFLAGS = -Isrc/include -Wall -Wextra -g -D_GNU_SOURCE -fPIC -no-pie
 ASFLAGS = -f elf64
 
 # Diretórios do projeto
@@ -66,45 +66,23 @@ clean:
 	rm -rf bin/*.o bin/barrierlayer bin/barrierlayer_hook.so bin/barrierlayer_gui
 	rm -f $(ASM_OBJECTS) $(CORE_OBJECTS) $(HOOK_OBJECTS) $(SANDBOX_OBJECTS)
 
-# Regras de compilação
-$(BIN_DIR)/%.o: $(ASM_DIR)/%.asm
-	@mkdir -p $(BIN_DIR)
-	$(AS) $(ASFLAGS) $< -o $@
 
-$(BIN_DIR)/%.o: $(SRC_DIR)/%.c
-	@mkdir -p $(BIN_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-# Alvos principais
-build: $(BIN_DIR)/barrierlayer $(BIN_DIR)/barrierlayer_hook.so $(BIN_DIR)/barrierlayer_gui
-
-$(BIN_DIR)/barrierlayer: $(CORE_OBJECTS) $(ASM_OBJECTS) $(SANDBOX_OBJECTS)
-	@mkdir -p $(BIN_DIR)
-	$(CC) $^ -o $@ $(LDFLAGS)
-
-$(BIN_DIR)/barrierlayer_hook.so: $(HOOK_OBJECTS) $(ASM_OBJECTS)
-	@mkdir -p $(BIN_DIR)
-	$(CC) -shared $^ -o $@ $(LDFLAGS)
-
-$(BIN_DIR)/barrierlayer_gui: $(GUI_SOURCE)
-	@mkdir -p $(BIN_DIR)
-	$(CC) $(CFLAGS) $< -o $@ `pkg-config --cflags --libs gtk+-3.0`
-
-$(BIN_DIR)/test_runner: tests/test_runner.c
-	@mkdir -p $(BIN_DIR)
-	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
-
-# Compila o executável principal
-bin/barrierlayer: $(CORE_SOURCES) src/include/barrierlayer.h src/include/logger.h
-	@mkdir -p bin
-	$(CC) $(CFLAGS) $(CORE_SOURCES) -o $@
 
 # Lista de arquivos-fonte para os hooks
 HOOK_SOURCES = \
 	src/hooks/file_hooks.c \
 	src/hooks/process_hooks.c \
 	src/hooks/registry_hooks.c \
-	src/hooks/system_hooks.c
+	src/hooks/system_hooks.c \
+	src/hooks/network_hooks.c \
+	src/hooks/hardware_hooks.c \
+	src/hooks/crypto_hooks.c \
+	src/hooks/thread_hooks.c \
+	src/hooks/memory_hooks.c \
+	src/hooks/kernel_hooks.c \
+	src/hooks/service_hooks.c \
+	src/hooks/wmi_hooks.c \
+	src/hooks/debug_hooks.c
 
 # Compila a biblioteca de hook para ser usada com LD_PRELOAD
 bin/barrierlayer_hook.so: $(HOOK_SOURCES) src/core/logger.c
@@ -120,12 +98,8 @@ bin/test_runner: tests/test_runner.c
 # Target para rodar os testes (depende da construção dos artefatos)
 test:
 	@make --no-print-directory build
-	@make --no-print-directory build-test
 	@echo "\nExecutando teste com LD_PRELOAD..."
 	LD_PRELOAD=./bin/barrierlayer_hook.so ./bin/test_runner
-
-clean:
-	@rm -rf bin
 
 usage:
 	@echo ""

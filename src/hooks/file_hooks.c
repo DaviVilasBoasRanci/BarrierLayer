@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <wchar.h>
 #include <dlfcn.h>
+#include <string.h>
 #include "logger.h"
 
 // Função construtora, chamada quando a biblioteca é carregada

@@ -30,11 +30,7 @@ unsigned long NtQuerySystemInformation(unsigned int SystemInformationClass, void
         // Adicione outros cases conforme necessário
     }
     char msg[160];
-    if (strcmp(class_name, "Classe Desconhecida") == 0) {
-        snprintf(msg, sizeof(msg), "HOOK: NtQuerySystemInformation | Classe: %s (%u)", class_name, SystemInformationClass);
-    } else {
-        snprintf(msg, sizeof(msg), "HOOK: NtQuerySystemInformation | Classe: %s", class_name);
-    }
+    snprintf(msg, sizeof(msg), "HOOK: NtQuerySystemInformation | Classe: %s (%u)", class_name, SystemInformationClass);
     logger_log(LOG_PATH, msg);
     if (real_NtQuerySystemInformation) {
         return real_NtQuerySystemInformation(SystemInformationClass, SystemInformation, SystemInformationLength, ReturnLength);

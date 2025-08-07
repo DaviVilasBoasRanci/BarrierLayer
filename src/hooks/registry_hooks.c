@@ -43,7 +43,9 @@ long RegQueryValueExW(void* hKey, const wchar_t* lpValueName, unsigned long* lpR
 
     char valueName[260] = {0};
     wcstombs(valueName, lpValueName, sizeof(valueName) - 1);
-    log_message("HOOK: RegQueryValueExW | Nome do Valor: %s", valueName);
+    char msg[512];
+    snprintf(msg, sizeof(msg), "HOOK: RegQueryValueExW | Nome do Valor: %s", valueName);
+    logger_log(LOG_PATH, msg);
 
     if (real_RegQueryValueExW) {
         return real_RegQueryValueExW(hKey, lpValueName, lpReserved, lpType, lpData, lpcbData);
