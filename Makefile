@@ -85,9 +85,9 @@ HOOK_SOURCES = \
 	src/hooks/debug_hooks.c
 
 # Compila a biblioteca de hook para ser usada com LD_PRELOAD
-bin/barrierlayer_hook.so: $(HOOK_SOURCES) src/core/logger.c
+bin/barrierlayer_hook.so: $(HOOK_SOURCES) src/core/logger.c src/core/ultra_logger.c
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -fPIC -shared $(HOOK_SOURCES) src/core/logger.c -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) -fPIC -shared $(HOOK_SOURCES) src/core/logger.c src/core/ultra_logger.c -o $@ $(LDFLAGS)
 
 
 # Compila o executável de teste, que chama as funções dinamicamente
