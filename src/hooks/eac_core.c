@@ -25,7 +25,7 @@ static void install_integrity_hooks(void);
 static EAC_CONTEXT eac_ctx = {0};
 
 // Emulação do driver do EAC
-int eac_driver_entry(void) {
+int eac_specific_init(void) {
     // Inicializa contexto do EAC
     eac_ctx.version = 0x1000;  // Versão mais recente
     eac_ctx.flags = 0x1 | 0x2; // Hardware verificado + Sistema confiável

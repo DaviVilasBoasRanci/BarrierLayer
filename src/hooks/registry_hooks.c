@@ -1,53 +1,50 @@
-#include "../include/logger.h"
-#define LOG_PATH "/home/davivbrdev/BarrierLayer/barrierlayer_activity.log"
-
-// Exemplo de uso em um hook:
-// logger_log(LOG_PATH, "Interceptando RegOpenKeyExW");
-
 #define _GNU_SOURCE
-#include <dlfcn.h>
-#include <wchar.h>
-#include <stdlib.h> // Para wcstombs
-#include "logger.h"
 #include <stdio.h>
+#include <dlfcn.h>
+#include <stddef.h> // Incluído para definir wchar_t
 
-// --- RegOpenKeyExW ---
-typedef long (*RegOpenKeyExW_f)(void*, const wchar_t*, unsigned long, unsigned long, void**);
-static RegOpenKeyExW_f real_RegOpenKeyExW = NULL;
+// Tipos de dados da API do Windows
+#ifndef _WINDEF_
+#define _WINDEF_
+    typedef void* LPVOID;
+    typedef unsigned long DWORD;
+    typedef unsigned char* LPBYTE;
+#endif
 
-// Hook para RegOpenKeyExW
-long RegOpenKeyExW(void* hKey, const wchar_t* lpSubKey, unsigned long ulOptions, unsigned long samDesired, void** phkResult) {
-    if (!real_RegOpenKeyExW) {
-        real_RegOpenKeyExW = dlsym(RTLD_NEXT, "RegOpenKeyExW");
+#ifndef _WINNT_
+#define _WINNT_
+    typedef void* HKEY;
+    typedef const wchar_t* LPCWSTR;
+    typedef wchar_t* LPWSTR;
+    typedef long LSTATUS;
+#endif
+
+// --- Hook para RegOpenKeyExW ---
+typedef LSTATUS (*RegOpenKeyExW_t)(HKEY, LPCWSTR, DWORD, DWORD, HKEY*);
+static RegOpenKeyExW_t original_RegOpenKeyExW = NULL;
+
+LSTATUS RegOpenKeyExW(HKEY hKey, LPCWSTR lpSubKey, DWORD ulOptions, DWORD samDesired, HKEY *phkResult) {
+    if (original_RegOpenKeyExW == NULL) {
+        original_RegOpenKeyExW = dlsym(RTLD_NEXT, "RegOpenKeyExW");
     }
-    char subKey[512] = {0};
-    wcstombs(subKey, lpSubKey, sizeof(subKey) - 1);
-    char msg[256];
-    snprintf(msg, sizeof(msg), "HOOK: RegOpenKeyExW | Chave: %s", subKey);
-    logger_log(LOG_PATH, msg);
-    if (real_RegOpenKeyExW) {
-        return real_RegOpenKeyExW(hKey, lpSubKey, ulOptions, samDesired, phkResult);
-    } else {
-        return 2; // Retorna ERROR_FILE_NOT_FOUND
-    }
+
+    fprintf(stderr, "[BarrierLayer Registry Hook] Interceptado: RegOpenKeyExW para a chave: %ls\n", lpSubKey);
+    fflush(stderr);
+
+    return original_RegOpenKeyExW(hKey, lpSubKey, ulOptions, samDesired, phkResult);
 }
 
-// --- RegQueryValueExW ---
-typedef long (*RegQueryValueExW_f)(void*, const wchar_t*, unsigned long*, unsigned long*, void*, unsigned long*);
-static RegQueryValueExW_f real_RegQueryValueExW = NULL;
+// --- Hook para RegQueryValueExW ---
+typedef LSTATUS (*RegQueryValueExW_t)(HKEY, LPCWSTR, DWORD*, DWORD*, LPBYTE, DWORD*);
+static RegQueryValueExW_t original_RegQueryValueExW = NULL;
 
-long RegQueryValueExW(void* hKey, const wchar_t* lpValueName, unsigned long* lpReserved, unsigned long* lpType, void* lpData, unsigned long* lpcbData) {
-    if (!real_RegQueryValueExW) {
-        real_RegQueryValueExW = dlsym(RTLD_NEXT, "RegQueryValueExW");
+LSTATUS RegQueryValueExW(HKEY hKey, LPCWSTR lpValueName, DWORD* lpReserved, DWORD* lpType, LPBYTE lpData, DWORD* lpcbData) {
+    if (original_RegQueryValueExW == NULL) {
+        original_RegQueryValueExW = dlsym(RTLD_NEXT, "RegQueryValueExW");
     }
 
-    char valueName[260] = {0};
-    wcstombs(valueName, lpValueName, sizeof(valueName) - 1);
-    log_message("HOOK: RegQueryValueExW | Nome do Valor: %s", valueName);
+    fprintf(stderr, "[BarrierLayer Registry Hook] Interceptado: RegQueryValueExW para o valor: %ls\n", lpValueName);
+    fflush(stderr);
 
-    if (real_RegQueryValueExW) {
-        return real_RegQueryValueExW(hKey, lpValueName, lpReserved, lpType, lpData, lpcbData);
-    } else {
-        return 2; // Retorna ERROR_FILE_NOT_FOUND
-    }
+    return original_RegQueryValueExW(hKey, lpValueName, lpReserved, lpType, lpData, lpcbData);
 }

@@ -44,28 +44,25 @@ else
     echo "[BarrierLayer] Desativado. Iniciando o jogo sem modificações."
 fi
 
-# Executa o .exe via wine
-check_wine_or_proton() {
-    if command -v wine >/dev/null 2>&1; then
-        echo "[BarrierLayer] Wine encontrado."
-        return 0
-    fi
-    if command -v proton >/dev/null 2>&1; then
-        echo "[BarrierLayer] Proton encontrado."
-        return 0
-    fi
-    echo "[BarrierLayer] Wine/Proton não encontrado. Instalando Wine..."
-    if command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get update && sudo apt-get install -y wine
-    elif command -v dnf >/dev/null 2>&1; then
-        sudo dnf install -y wine
-    elif command -v pacman >/dev/null 2>&1; then
-        sudo pacman -Sy wine
-    else
-        echo "[BarrierLayer] Não foi possível instalar Wine automaticamente. Instale manualmente."
-        exit 1
-    fi
-}
+# 6. Determina qual lançador usar (Wine ou Proton) com base na configuração
+CONFIG_FILE="$PROJECT_ROOT/config.mk"
+LAUNCHER="wine" # Padrão é wine
 
-check_wine_or_proton
-wine "$@"
+if [ -f "$CONFIG_FILE" ]; then
+    # Lê a configuração do DEFAULT_LAUNCHER do config.mk
+    LAUNCHER_FROM_CONFIG=$(grep -E '^\s*DEFAULT_LAUNCHER\s*=' "$CONFIG_FILE" | cut -d'=' -f2 | tr -d '[:space:]')
+    if [ "$LAUNCHER_FROM_CONFIG" = "proton" ]; then
+        # Verifica se o comando proton existe
+        if command -v proton >/dev/null 2>&1; then
+            LAUNCHER="proton"
+        else
+            echo "[BarrierLayer] Aviso: Proton configurado como padrão, mas não encontrado. Usando wine."
+        fi
+    fi
+fi
+
+echo "[BarrierLayer] Usando o lançador: $LAUNCHER"
+
+# 7. Executa o jogo com o lançador determinado
+# O `exec` substitui o processo do script pelo processo do jogo.
+exec "$LAUNCHER" "$@"

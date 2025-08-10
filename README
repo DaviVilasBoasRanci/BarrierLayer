@@ -1,251 +1,90 @@
-## Instalação do Script no PATH
+# BarrierLayer - Advanced System Security & Anti-Cheat for Linux Gaming
 
-Para facilitar o uso do BarrierLayer na Steam, Epic Games ou qualquer launcher, instale o script no seu PATH:
+![BarrierLayer Logo Placeholder](https://via.placeholder.com/150x50?text=BarrierLayer+Logo) <!-- Replace with actual logo -->
 
-```bash
-./install_barrierlayer_script.sh
-```
+## 🛡️ A Comprehensive Compatibility and Security Layer for Linux Gamers 🎮
 
-Certifique-se de que `$HOME/.local/bin` está no seu PATH. Adicione ao `.bashrc` ou `.zshrc` se necessário:
+BarrierLayer is an innovative open-source project designed to empower Linux users to run Windows games, especially those with challenging anti-cheat software, seamlessly under Wine/Proton. By leveraging advanced low-level system techniques, BarrierLayer aims to bridge the compatibility gap and enhance system integrity during gameplay.
 
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
+## ✨ Objective
 
-Depois disso, basta usar:
+In the evolving landscape of Linux gaming, anti-cheat solutions often pose significant barriers. BarrierLayer's primary objective is to provide a robust, transparent, and configurable framework that:
 
-```bash
-ENABLE_BARRIERLAYER=1 run_with_barrierlayer.sh %command%
-```
-ou
-```bash
-ENABLE_BARRIERLAYER=1 run_with_barrierlayer.sh "/caminho/para/JogoEpic.exe"
-```
-## Usando com Epic Games
+*   **Enables Anti-Cheat Compatibility:** Allows games with aggressive anti-cheat systems (like EAC, BattlEye) to run on Linux, which would otherwise prevent gameplay.
+*   **Ensures System Integrity:** Provides a layer of security and monitoring to protect the system from potentially intrusive game anti-cheat mechanisms.
+*   **Enhances User Experience:** Offers a smoother and more reliable gaming experience for titles traditionally confined to Windows.
 
-Para rodar jogos da Epic Games com o BarrierLayer:
+## 🚀 Features
 
-1. Localize o executável do jogo (ex: `/home/usuario/.wine/drive_c/Program Files/Epic Games/NomeDoJogo/Jogo.exe`).
-2. Execute o comando abaixo no terminal:
+BarrierLayer achieves its goals through a multi-faceted approach, combining user-space and kernel-level interventions:
 
-```bash
-ENABLE_BARRIERLAYER=1 /home/davivbrdev/BarrierLayer/scripts/run_with_barrierlayer.sh "/caminho/para/Jogo.exe"
-```
+*   **User-Space Hooking (`barrierlayer_hook.so`):** Intercepts and manages critical Win32 API calls.
+    *   **Process Hooks:** Monitors and controls process creation and manipulation.
+    *   **Memory Hooks:** Oversees memory read/write operations for integrity checks.
+    *   **File I/O Hooks:** Monitors file system access to prevent unauthorized modifications.
+    *   **Registry Hooks:** Intercepts Windows Registry access.
+    *   **Crypto Hooks:** Monitors cryptographic operations for anti-tampering measures.
+    *   **Network Hooks:** (Planned/Under Development) For network activity monitoring.
+*   **Kernel Module (`barrierlayer_kernel.ko`):** Provides deep system-level control and advanced anti-cheat evasion techniques.
+    *   Enables low-level system call interception and manipulation.
+    *   (Note: Specific advanced features like process-hiding are experimental and under development).
+*   **Configurable Launcher (`barrierlayer-launcher.sh`):** A flexible launcher that intelligently integrates with Wine or Proton environments.
+*   **Steam Integration:** Dedicated scripts for easy setup within Steam's launch options (`scripts/run_with_barrierlayer.sh`).
+*   **Interactive Configuration (`make configs`):** A user-friendly command-line interface to customize build options and features.
+*   **Comprehensive Logging:** Detailed internal logging for debugging and monitoring BarrierLayer's operations.
+*   **Sandboxing Capabilities:** (Under Development) To further isolate game processes and enhance security.
 
-O BarrierLayer será ativado e irá interceptar chamadas do jogo normalmente, gerando logs em `barrierlayer_activity.log`.
+## 🛠️ Getting Started
 
-Se quiser facilitar, basta usar a interface gráfica do BarrierLayer para selecionar o `.exe` do jogo da Epic e rodar normalmente.
-# BarrierLayer
+### Prerequisites
 
-## Visão Geral
-
-BarrierLayer é uma ferramenta de compatibilidade avançada, focada em habilitar a execução nativa dos sistemas anti-cheat mais utilizados no mercado — Easy Anti-Cheat (EAC) e BattlEye — em sistemas Linux. Projetada para funcionar em conjunto com Proton ou Wine, BarrierLayer atua como uma camada especializada que traduz e adapta as chamadas e comportamentos específicos dos anti-cheats para o ambiente Linux, possibilitando que jogos que antes não rodavam ou apresentavam problemas por causa dos anti-cheats funcionem plenamente.
-
-Este projeto busca expandir o ecossistema de jogos nativos para Linux, eliminando uma das principais barreiras para a adoção dessa plataforma.
-
----
-
-## Motivação
-
-
-
-## Funcionalidades Detalhadas
-
-### 1. Compatibilidade Especializada para Anti-Cheats
-
-## BarrierLayer GUI
-
-Agora o BarrierLayer possui uma interface gráfica (GTK) que permite escolher e rodar qualquer arquivo `.exe` com a camada de hooks.
-
-### Como compilar a interface gráfica:
-
-No terminal, instale as dependências do GTK 3:
+Before you begin, ensure you have the necessary build tools and libraries installed on your Linux system. You can use the provided `install-deps` target in the Makefile:
 
 ```bash
-sudo apt install libgtk-3-dev
+sudo make install-deps
 ```
 
-Compile o arquivo da interface:
+### Installation
+
+BarrierLayer provides an automated installation script to simplify the setup process. For detailed instructions on how to install BarrierLayer, including where files are placed and how to manage the kernel module, please refer to the dedicated installation guide:
+
+➡️ [**INSTALLATION.md**](./INSTALLATION.md)
+
+### Configuration
+
+Customize BarrierLayer's features and build options using the interactive configuration CLI:
 
 ```bash
-gcc src/barrierlayer_gui.c -o bin/barrierlayer_gui $(pkg-config --cflags --libs gtk+-3.0)
+make configs
 ```
 
-### Como usar:
+This will guide you through enabling/disabling features like kernel module support, GUI, Wine/Proton integration, and more.
 
-1. Compile o projeto normalmente (`make build`).
-2. Compile a interface gráfica conforme acima.
-3. Execute a interface:
-   ```bash
-   ./bin/barrierlayer_gui
-   ```
-4. Escolha o arquivo `.exe` desejado e clique em "Executar com BarrierLayer".
+### Building from Source
 
-O BarrierLayer agora pode ser usado para rodar qualquer arquivo `.exe` com hooks, não apenas para análise de anti-cheats.
-- Tradução das chamadas Windows utilizadas por EAC e BattlEye para equivalentes Linux.
-- Emulação dos comportamentos esperados pelos anti-cheats para evitar detecção de ambiente não suportado.
-- Suporte para APIs específicas de kernel, drivers virtuais e hooks utilizados pelos anti-cheats.
-- Interceptação de chamadas do anti-cheat para o sistema operacional.
-- Tradução dinâmica de funções, arquivos, rede, processos e outras operações.
-- Monitoramento e manipulação segura dos dados trafegados para garantir integridade e evitar falsos positivos.
+After configuring, compile the project:
 
-### 3. Isolamento e Sandboxing
+```bash
+make
+```
 
-- Execução dos componentes anti-cheat em ambiente isolado para aumentar segurança e evitar interferência direta com o sistema principal.
-- Controle rigoroso dos acessos de hardware e software para prevenir comportamento malicioso.
-- Mecanismos para recuperação e reinicialização automática em caso de falhas.
+### Usage
 
-### 4. Integração Transparente com Proton/Wine
+Once installed, you can launch games with BarrierLayer using the provided aliases or by configuring your game launcher (e.g., Steam).
 
-- Interface que permite o uso conjunto de BarrierLayer e Proton/Wine, mantendo compatibilidade.
-- Configurações simplificadas para o usuário final, com scripts e ferramentas para setup automático.
-- Compatibilidade com diferentes versões do Proton e Wine para maximizar cobertura.
+*   **Standalone Executable:**
+    ```bash
+    barrierlayer /path/to/your/game.exe
+    ```
+*   **Steam Integration:** Add the following to your game's launch options in Steam:
+    ```
+    ENABLE_BARRIERLAYER=1 /full/path/to/BarrierLayer/scripts/run_with_barrierlayer.sh %command%
+    ```
 
-### 5. Atualizações e Manutenção
+## 🤝 Contributing
 
-- Monitoramento ativo das atualizações dos anti-cheats para adaptar a ferramenta rapidamente.
-- Suporte para múltiplas versões de EAC e BattlEye.
-- Ferramentas para coleta de logs, diagnóstico e envio de relatórios.
+We welcome contributions from the community! Whether it's bug reports, feature suggestions, or code contributions, your help is invaluable. Please refer to our [CONTRIBUTING.md](CONTRIBUTING.md) (coming soon) for guidelines.
 
----
+## 📄 License
 
-## Arquitetura do Sistema
-
-```plaintext
-+--------------------------------------+
-|              BarrierLayer            |
-|  +------------------------------+   |
-|  | Camada de Tradução / Proxy   |   |
-|  +------------------------------+   |
-|  | Isolamento / Sandboxing      |   |
-|  +------------------------------+   |
-+--------------------------------------+
-                ||
-                \/
-+--------------------------------------+
-|            Proton / Wine              |
-+--------------------------------------+
-                ||
-                \/
-+--------------------------------------+
-|             Linux Kernel             |
-+--------------------------------------+
-
-    A Camada de Tradução/Proxy intercepta e traduz as chamadas Windows feitas pelos anti-cheats para APIs Linux correspondentes.
-
-    O Isolamento/Sandboxing garante que os anti-cheats rodem em ambiente seguro, evitando interferência no sistema principal.
-
-    A integração com Proton/Wine permite que o jogo e seus componentes funcionem normalmente.
-
-    A camada final é o Kernel Linux que executa todo o sistema.
-
-Roadmap Detalhado
-Fase 1: Pesquisa e Planejamento (1-2 meses)
-
-    Levantamento completo das funções e APIs usadas pelos anti-cheats.
-
-    Estudo das arquiteturas do EAC e BattlEye.
-
-    Avaliação legal sobre engenharia reversa e compatibilidade.
-
-    Definição da stack tecnológica e linguagens a usar.
-
-    Contato inicial com comunidades de Proton, Wine e Linux gamers.
-
-Fase 2: Prototipagem (2-3 meses)
-
-    Ambiente de desenvolvimento com Linux + Proton + jogos com EAC/BattlEye.
-
-    Desenvolvimento de interceptadores básicos para chamadas Windows mais comuns.
-
-    Testes iniciais para validar se o anti-cheat inicia sem erros.
-
-    Ferramentas para captura e análise de chamadas.
-
-Fase 3: Desenvolvimento Completo (6-12 meses)
-
-    Implementação total do suporte às APIs críticas e específicas dos anti-cheats.
-
-    Desenvolvimento da camada de sandboxing com controle de recursos e isolamento.
-
-    Criação de interface para integração transparente com Proton/Wine.
-
-    Otimização de desempenho para minimizar overhead.
-
-    Construção de ferramentas para diagnóstico, logs e correção automática.
-
-Fase 4: Testes e Validação (3-6 meses)
-
-    Testes extensivos com diversos jogos populares e diferentes versões dos anti-cheats.
-
-    Coleta e análise de feedback da comunidade.
-
-    Correção de bugs e refinamentos na compatibilidade.
-
-    Documentação detalhada para usuários e desenvolvedores.
-
-Fase 5: Lançamento e Suporte Contínuo (Indefinido)
-
-    Publicação da versão beta pública e, posteriormente, da versão estável.
-
-    Monitoramento constante das atualizações dos anti-cheats.
-
-    Atualizações rápidas para manter a compatibilidade.
-
-    Engajamento ativo com a comunidade para suporte e melhorias.
-
-Desafios Técnicos e Considerações
-
-    Complexidade da engenharia reversa: Sistemas anti-cheat são proprietários, protegidos e frequentemente atualizados, tornando a compatibilidade um desafio técnico constante.
-
-    Questões legais: É fundamental respeitar as leis de propriedade intelectual e os termos de serviço para evitar problemas jurídicos.
-
-    Performance e estabilidade: Garantir que a camada de tradução não cause lentidão ou falhas no jogo é essencial para a aceitação do usuário.
-
-    Manutenção contínua: Os anti-cheats atualizam frequentemente seus sistemas para detectar trapaças, o que requer manutenção constante da ferramenta.
-
-    Integração com múltiplas versões: Proton, Wine e os próprios anti-cheats podem ter várias versões ativas, aumentando a complexidade.
-
-Tecnologias e Ferramentas Previstas
-
-    Linguagem principal: C/C++ para desempenho e integração com sistemas baixos.
-
-    Python/Bash para scripts auxiliares, testes e automação.
-
-    Utilização de ferramentas de debug e engenharia reversa (ex: Ghidra, IDA Pro, radare2).
-
-    Sistema de controle de versões Git/GitHub para desenvolvimento colaborativo.
-
-    Uso de containers e máquinas virtuais para testes isolados.
-
-Como Contribuir
-
-BarrierLayer é um projeto aberto e colaborativo. Se você tem experiência com:
-
-    Desenvolvimento Linux de baixo nível
-
-    Proton/Wine
-
-    Engenharia reversa
-
-    Desenvolvimento de jogos e anti-cheats
-
-    Segurança da informação
-
-Sua contribuição é mais que bem-vinda! Abra issues, envie pull requests e participe da comunidade para ajudar a construir a melhor solução para a compatibilidade de anti-cheats no Linux.
-Contato e Comunidade
-
-    GitHub: [inserir link do repositório]
-
-    Fórum/Discord: [inserir canais de comunidade]
-
-    Email: [inserir contato]
-
-Licença
-
-BarrierLayer será lançado sob uma licença open-source permissiva (ex: MIT, Apache 2.0) respeitando as limitações legais quanto a engenharia reversa e propriedade intelectual.
-Agradecimentos
-
-Agradecemos às comunidades Proton, Wine, Lutris, Steam Deck, e todos os entusiastas Linux gamers que inspiram e apoiam este projeto.
-
-BarrierLayer — derrubando barreiras para jogos no Linux, um passo de cada vez.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
