@@ -43,8 +43,16 @@ LSTATUS RegQueryValueExW(HKEY hKey, LPCWSTR lpValueName, DWORD* lpReserved, DWOR
         original_RegQueryValueExW = dlsym(RTLD_NEXT, "RegQueryValueExW");
     }
 
+<<<<<<< HEAD
     fprintf(stderr, "[BarrierLayer Registry Hook] Interceptado: RegQueryValueExW para o valor: %ls\n", lpValueName);
     fflush(stderr);
+=======
+    char valueName[260] = {0};
+    wcstombs(valueName, lpValueName, sizeof(valueName) - 1);
+    char msg[512];
+    snprintf(msg, sizeof(msg), "HOOK: RegQueryValueExW | Nome do Valor: %s", valueName);
+    logger_log(LOG_PATH, msg);
+>>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638
 
     return original_RegQueryValueExW(hKey, lpValueName, lpReserved, lpType, lpData, lpcbData);
 }

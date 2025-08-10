@@ -1,4 +1,5 @@
 #include <stdio.h>
+<<<<<<< HEAD
 #include <unistd.h>
 #include <stdlib.h>
 
@@ -78,3 +79,33 @@ int main() {
 ");
     return 0;
 }
+=======
+#include <dlfcn.h>
+
+int main() {
+    printf("=== Teste Simples do BarrierLayer ===\n");
+    
+    // Tentar carregar a biblioteca diretamente
+    void* handle = dlopen("./bin/barrierlayer_hook.so", RTLD_LAZY);
+    if (handle) {
+        printf("✅ Biblioteca barrierlayer_hook.so carregada com sucesso!\n");
+        
+        // Verificar se algumas funções estão presentes
+        void* func1 = dlsym(handle, "CreateFileW");
+        void* func2 = dlsym(handle, "OpenProcess");
+        void* func3 = dlsym(handle, "RegOpenKeyExW");
+        
+        printf("📊 Verificação de hooks:\n");
+        printf("   CreateFileW: %s\n", func1 ? "✅ Presente" : "❌ Ausente");
+        printf("   OpenProcess: %s\n", func2 ? "✅ Presente" : "❌ Ausente");
+        printf("   RegOpenKeyExW: %s\n", func3 ? "✅ Presente" : "❌ Ausente");
+        
+        dlclose(handle);
+    } else {
+        printf("❌ Erro ao carregar biblioteca: %s\n", dlerror());
+    }
+    
+    printf("\n🎯 Teste concluído!\n");
+    return 0;
+}
+>>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638

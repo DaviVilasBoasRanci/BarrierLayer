@@ -205,7 +205,11 @@ $(HOOK_LIBRARY): $(HOOK_OBJECTS) $(CORE_OBJECTS) $(ASM_OBJECTS) $(BIN_DIR)
 # Test runner
 $(TEST_BINARY): $(SRC_DIR)/test_runner.c $(BIN_DIR)
 	@echo -e "$(BLUE)[INFO]$(NC) Building test runner..."
+<<<<<<< HEAD
 	@$(CC) $(CFLAGS) -o $@ $< $(filter %/kernel_hooks.o,$(HOOK_OBJECTS)) $(LDFLAGS)
+=======
+	@$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+>>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638
 	@echo -e "$(GREEN)[SUCCESS]$(NC) Built: $@"
 
 # Regras de compilação
@@ -222,11 +226,14 @@ config:
 	@echo -e "$(CYAN)[CONFIG]$(NC) Starting interactive configuration..."
 	@./configure.sh
 
+<<<<<<< HEAD
 # Configuração CLI amigável
 configs:
 	@echo -e "$(CYAN)[CONFIG]$(NC) Starting interactive CLI configuration..."
 	@$(SHELL) scripts/configure_cli.sh
 
+=======
+>>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638
 # Configuração automática
 auto-config:
 	@echo -e "$(CYAN)[CONFIG]$(NC) Using automatic configuration..."
@@ -255,10 +262,17 @@ status:
 	fi
 	@echo ""
 	@echo "🚀 Usage:"
+<<<<<<< HEAD
 	@echo "  Standalone:     ./barrierlayer-launcher.sh -p <your_app.exe>"
 	@echo "  Steam:          Set game Launch Options to the following:"
 	@echo "                  ENABLE_BARRIERLAYER=1 $(shell pwd)/scripts/run_with_barrierlayer.sh %command%"
 	@echo "  Log Monitoring: tail -f barrierlayer_gui.log"
+=======
+	@echo "  Basic hook:     LD_PRELOAD=./$(HOOK_LIBRARY) <your_app>"
+	@echo "  With logging:   BARRIERLAYER_LOG_LEVEL=0 LD_PRELOAD=./$(HOOK_LIBRARY) <your_app>"
+	@echo "  GUI interface:  ./$(GUI_BINARY)"
+	@echo "  Configuration:  make config"
+>>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638
 	@echo ""
 
 # Informações do sistema

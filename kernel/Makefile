@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 obj-m += barrierlayer_kernel.o
+=======
+obj-m += barrierlayer_minimal.o
+>>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638
 CC = gcc
 EXTRA_CFLAGS += -Wno-unused-parameter -Wno-unused-variable
 CONFIG_STACK_VALIDATION := n

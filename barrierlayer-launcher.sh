@@ -412,6 +412,7 @@ show_help() {
 
 # Função principal
 main() {
+<<<<<<< HEAD
     # Carregar configuração padrão do config.mk
     if [[ -f "$CONFIG_FILE" ]]; then
         DEFAULT_MODE_FROM_CONFIG=$(grep -E '^\s*DEFAULT_LAUNCHER\s*=' "$CONFIG_FILE" | cut -d'=' -f2 | tr -d '[:space:]')
@@ -422,6 +423,9 @@ main() {
     fi
 
     # Parse argumentos (eles podem sobrepor a configuração padrão)
+=======
+    # Parse argumentos
+>>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638
     while [[ $# -gt 0 ]]; do
         case $1 in
             -w|--wine)
