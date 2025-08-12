@@ -17,7 +17,7 @@ typedef struct {
 static void setup_protected_regions(void);
 static void install_eac_hooks(void);
 static void generate_valid_signatures(void);
-static int simulate_clean_environment(void);
+int simulate_clean_environment(void);
 static void spoof_eac_driver(void);
 static void setup_memory_protections(void);
 static void install_integrity_hooks(void);

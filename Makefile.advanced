@@ -1,0 +1,274 @@
+# Makefile Avançado para BarrierLayer Kernel-Mode
+# ================================================
+
+# Configurações do compilador
+CC = gcc
+CFLAGS = -Wall -Wextra -O2 -fPIC -std=gnu99
+LDFLAGS = -shared
+KERNEL_CFLAGS = -Wall -Wextra -O2
+
+# Diretórios
+SRCDIR = src
+KERNELDIR = kernel
+BINDIR = bin
+OBJDIR = obj
+TESTDIR = tests
+
+# Arquivos fonte
+STEALTH_LAUNCHER_SRC = $(SRCDIR)/stealth_launcher.c
+ADVANCED_INJECTION_SRC = $(SRCDIR)/advanced_injection.c
+KERNEL_MODULE_SRC = $(KERNELDIR)/barrierlayer_kernel_advanced.c
+
+# Arquivos de saída
+STEALTH_LAUNCHER = $(BINDIR)/stealth_launcher
+ADVANCED_INJECTION = $(BINDIR)/advanced_injection
+KERNEL_MODULE = $(KERNELDIR)/barrierlayer_kernel_advanced.ko
+
+# Configurações do kernel
+KERNEL_VERSION = $(shell uname -r)
+KERNEL_BUILD = /lib/modules/$(KERNEL_VERSION)/build
+KERNEL_MODULES_DIR = /lib/modules/$(KERNEL_VERSION)/extra
+
+# Alvos principais
+.PHONY: all clean install uninstall test kernel-mode user-mode help
+
+all: user-mode kernel-mode
+
+# Compilação do modo usuário
+user-mode: $(STEALTH_LAUNCHER) $(ADVANCED_INJECTION)
+
+$(STEALTH_LAUNCHER): $(STEALTH_LAUNCHER_SRC) | $(BINDIR)
+	@echo "Compilando Stealth Launcher..."
+	$(CC) $(CFLAGS) -o $@ $< -ldl
+
+$(ADVANCED_INJECTION): $(ADVANCED_INJECTION_SRC) | $(BINDIR)
+	@echo "Compilando Advanced Injection..."
+	$(CC) $(CFLAGS) -o $@ $< -ldl
+
+# Compilação do módulo do kernel
+kernel-mode: $(KERNEL_MODULE)
+
+$(KERNEL_MODULE): $(KERNEL_MODULE_SRC)
+	@echo "Compilando módulo do kernel avançado..."
+	@if [ ! -d "$(KERNEL_BUILD)" ]; then \
+		echo "Erro: Headers do kernel não encontrados em $(KERNEL_BUILD)"; \
+		echo "Instale os headers do kernel com: sudo apt-get install linux-headers-$(KERNEL_VERSION)"; \
+		exit 1; \
+	fi
+	@echo "obj-m += barrierlayer_kernel_advanced.o" > $(KERNELDIR)/Makefile.kernel
+	@echo "barrierlayer_kernel_advanced-objs := barrierlayer_kernel_advanced.o" >> $(KERNELDIR)/Makefile.kernel
+	@echo "EXTRA_CFLAGS += -DDEBUG -g" >> $(KERNELDIR)/Makefile.kernel
+	$(MAKE) -C $(KERNEL_BUILD) M=$(PWD)/$(KERNELDIR) -f $(PWD)/$(KERNELDIR)/Makefile.kernel modules
+	@rm -f $(KERNELDIR)/Makefile.kernel
+
+# Criar diretórios necessários
+$(BINDIR):
+	mkdir -p $(BINDIR)
+
+$(OBJDIR):
+	mkdir -p $(OBJDIR)
+
+# Instalação
+install: all
+	@echo "Instalando BarrierLayer Kernel-Mode..."
+	@if [ "$(shell id -u)" != "0" ]; then \
+		echo "Erro: Instalação requer privilégios de root"; \
+		exit 1; \
+	fi
+	
+	# Instalar binários
+	install -m 755 $(STEALTH_LAUNCHER) /usr/local/bin/
+	install -m 755 $(ADVANCED_INJECTION) /usr/local/bin/
+	
+	# Instalar módulo do kernel
+	mkdir -p $(KERNEL_MODULES_DIR)
+	install -m 644 $(KERNEL_MODULE) $(KERNEL_MODULES_DIR)/
+	depmod -a
+	
+	# Criar arquivo de configuração
+	mkdir -p /etc/barrierlayer
+	echo "# BarrierLayer Kernel-Mode Configuration" > /etc/barrierlayer/config
+	echo "STEALTH_MODE=1" >> /etc/barrierlayer/config
+	echo "ANTI_DEBUG=1" >> /etc/barrierlayer/config
+	echo "HIDE_PROCESSES=1" >> /etc/barrierlayer/config
+	echo "KERNEL_MODULE=barrierlayer_kernel_advanced" >> /etc/barrierlayer/config
+	
+	# Criar script de inicialização
+	echo '#!/bin/bash' > /usr/local/bin/barrierlayer-load
+	echo 'modprobe barrierlayer_kernel_advanced' >> /usr/local/bin/barrierlayer-load
+	echo 'echo "BarrierLayer kernel module loaded"' >> /usr/local/bin/barrierlayer-load
+	chmod +x /usr/local/bin/barrierlayer-load
+	
+echo '#!/bin/bash' > /usr/local/bin/barrierlayer-unload
+	echo 'modprobe -r barrierlayer_kernel_advanced' >> /usr/local/bin/barrierlayer-unload
+	echo 'echo "BarrierLayer kernel module unloaded"' >> /usr/local/bin/barrierlayer-unload
+	chmod +x /usr/local/bin/barrierlayer-unload
+	
+	@echo "Instalação concluída!"
+	@echo ""
+	@echo "Para usar:"
+	@echo "  1. Carregue o módulo: sudo barrierlayer-load"
+	@echo "  2. Execute: stealth_launcher <programa>"
+	@echo "  3. Descarregue o módulo: sudo barrierlayer-unload"
+
+# Desinstalação
+uninstall:
+	@echo "Desinstalando BarrierLayer Kernel-Mode..."
+	@if [ "$(shell id -u)" != "0" ]; then \
+		echo "Erro: Desinstalação requer privilégios de root"; \
+		exit 1; \
+	fi
+	
+	# Descarregar módulo se estiver carregado
+	-modprobe -r barrierlayer_kernel_advanced 2>/dev/null
+	
+	# Remover arquivos
+	rm -f /usr/local/bin/stealth_launcher
+	rm -f /usr/local/bin/advanced_injection
+	rm -f /usr/local/bin/barrierlayer-load
+	rm -f /usr/local/bin/barrierlayer-unload
+	rm -f $(KERNEL_MODULES_DIR)/barrierlayer_kernel_advanced.ko
+	rm -rf /etc/barrierlayer
+	
+	# Atualizar dependências do kernel
+	depmod -a
+	
+	@echo "Desinstalação concluída!"
+
+# Testes
+test: all
+	@echo "Executando testes..."
+	@echo "Teste 1: Verificando compilação do launcher..."
+	@if [ -x "$(STEALTH_LAUNCHER)" ]; then \
+		echo "✓ Stealth Launcher compilado com sucesso"; \
+	else \
+		echo "✗ Falha na compilação do Stealth Launcher"; \
+		exit 1; \
+	fi
+	
+	@echo "Teste 2: Verificando compilação do injection..."
+	@if [ -x "$(ADVANCED_INJECTION)" ]; then \
+		echo "✓ Advanced Injection compilado com sucesso"; \
+	else \
+		echo "✗ Falha na compilação do Advanced Injection"; \
+		exit 1; \
+	fi
+	
+	@echo "Teste 3: Verificando módulo do kernel..."
+	@if [ -f "$(KERNEL_MODULE)" ]; then \
+		echo "✓ Módulo do kernel compilado com sucesso"; \
+		modinfo $(KERNEL_MODULE) | head -5; \
+	else \
+		echo "✗ Falha na compilação do módulo do kernel"; \
+		exit 1; \
+	fi
+	
+	@echo "Teste 4: Testando launcher (modo help)..."
+	@$(STEALTH_LAUNCHER) --help > /dev/null 2>&1 && echo "✓ Launcher funcional" || echo "✗ Launcher com problemas"
+	
+	@echo ""
+	@echo "Todos os testes concluídos!"
+
+# Teste do módulo do kernel (requer root)
+test-kernel: kernel-mode
+	@echo "Testando módulo do kernel..."
+	@if [ "$(shell id -u)" != "0" ]; then \
+		echo "Erro: Teste do kernel requer privilégios de root"; \
+		exit 1; \
+	fi
+	
+	@echo "Carregando módulo..."
+	-insmod $(KERNEL_MODULE)
+	
+	@echo "Verificando se o módulo foi carregado..."
+	@if lsmod | grep -q barrierlayer_kernel_advanced; then \
+		echo "✓ Módulo carregado com sucesso"; \
+		echo "Informações do módulo:"; \
+		lsmod | grep barrierlayer_kernel_advanced; \
+		echo "Descarregando módulo..."; \
+		rmmod barrierlayer_kernel_advanced; \
+		echo "✓ Módulo descarregado com sucesso"; \
+	else \
+		echo "✗ Falha ao carregar o módulo"; \
+		exit 1; \
+	fi
+
+# Limpeza
+clean:
+	@echo "Limpando arquivos de compilação..."
+	rm -rf $(BINDIR)
+	rm -rf $(OBJDIR)
+	rm -f $(KERNELDIR)/*.o
+	rm -f $(KERNELDIR)/*.ko
+	rm -f $(KERNELDIR)/*.mod
+	rm -f $(KERNELDIR)/*.mod.c
+	rm -f $(KERNELDIR)/.*.cmd
+	rm -f $(KERNELDIR)/Module.symvers
+	rm -f $(KERNELDIR)/modules.order
+	rm -rf $(KERNELDIR)/.tmp_versions
+	rm -f $(KERNELDIR)/Makefile.kernel
+	@echo "Limpeza concluída!"
+
+# Compilação para debug
+debug: CFLAGS += -DDEBUG -g -O0
+debug: KERNEL_CFLAGS += -DDEBUG -g
+debug: all
+
+# Compilação para release
+release: CFLAGS += -DNDEBUG -O3 -s
+release: KERNEL_CFLAGS += -DNDEBUG -O3
+release: all
+
+# Verificação de dependências
+check-deps:
+	@echo "Verificando dependências..."
+	@echo -n "GCC: "
+	@which gcc > /dev/null && echo "✓ Encontrado" || echo "✗ Não encontrado"
+	@echo -n "Make: "
+	@which make > /dev/null && echo "✓ Encontrado" || echo "✗ Não encontrado"
+	@echo -n "Headers do kernel: "
+	@[ -d "$(KERNEL_BUILD)" ] && echo "✓ Encontrados em $(KERNEL_BUILD)" || echo "✗ Não encontrados"
+	@echo -n "Modprobe: "
+	@which modprobe > /dev/null && echo "✓ Encontrado" || echo "✗ Não encontrado"
+
+# Informações do sistema
+info:
+	@echo "Informações do Sistema:"
+	@echo "======================"
+	@echo "Kernel: $(KERNEL_VERSION)"
+	@echo "Arquitetura: $(shell uname -m)"
+	@echo "Compilador: $(shell $(CC) --version | head -1)"
+	@echo "Build do kernel: $(KERNEL_BUILD)"
+	@echo "Diretório de módulos: $(KERNEL_MODULES_DIR)"
+	@echo ""
+	@echo "Configuração do Build:"
+	@echo "====================="
+	@echo "CFLAGS: $(CFLAGS)"
+	@echo "KERNEL_CFLAGS: $(KERNEL_CFLAGS)"
+	@echo "LDFLAGS: $(LDFLAGS)"
+
+# Ajuda
+help:
+	@echo "BarrierLayer Kernel-Mode Makefile"
+	@echo "================================="
+	@echo ""
+	@echo "Alvos disponíveis:"
+	@echo "  all          - Compilar tudo (padrão)"
+	@echo "  user-mode    - Compilar apenas componentes user-mode"
+	@echo "  kernel-mode  - Compilar apenas módulo do kernel"
+	@echo "  install      - Instalar no sistema (requer root)"
+	@echo "  uninstall    - Desinstalar do sistema (requer root)"
+	@echo "  test         - Executar testes básicos"
+	@echo "  test-kernel  - Testar módulo do kernel (requer root)"
+	@echo "  clean        - Limpar arquivos de compilação"
+	@echo "  debug        - Compilar com símbolos de debug"
+	@echo "  release      - Compilar otimizado para release"
+	@echo "  check-deps   - Verificar dependências"
+	@echo "  info         - Mostrar informações do sistema"
+	@echo "  help         - Mostrar esta ajuda"
+	@echo ""
+	@echo "Exemplos:"
+	@echo "  make                    # Compilar tudo"
+	@echo "  make debug              # Compilar com debug"
+	@echo "  sudo make install       # Instalar"
+	@echo "  sudo make test-kernel   # Testar módulo"

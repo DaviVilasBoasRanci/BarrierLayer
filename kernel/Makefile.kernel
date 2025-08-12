@@ -1,0 +1,3 @@
+obj-m := barrierlayer_kernel_advanced.ko
+barrierlayer_kernel_advanced-objs := barrierlayer_kernel_advanced.o
+EXTRA_CFLAGS += 

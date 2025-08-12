@@ -20,6 +20,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK_LIBRARY="$SCRIPT_DIR/bin/barrierlayer_hook.so"
 CONFIG_FILE="$SCRIPT_DIR/config.mk"
 
+# New Advanced BarrierLayer Configuration
+STEALTH_MODE=1
+ANTI_DEBUG=1
+HIDE_PROCESS=1
+KERNEL_MODE=1
+
 # Variáveis globais
 DETECTED_WINE=""
 DETECTED_PROTON=""
@@ -231,34 +237,30 @@ setup_proton_environment() {
     log_debug "Proton environment configured"
 }
 
-# Configurar BarrierLayer
+# Configurar BarrierLayer (preparar argumentos para stealth_launcher)
 setup_barrierlayer() {
-    log_info "Setting up BarrierLayer..."
+    log_info "Preparing BarrierLayer arguments for stealth_launcher..."
     
-    # Verificar se a biblioteca existe
-    if [[ ! -f "$HOOK_LIBRARY" ]]; then
-        log_error "Hook library not found: $HOOK_LIBRARY"
-        log_info "Please run 'make' to build BarrierLayer first"
-        return 1
+    # Argumentos para o stealth_launcher
+    BARRIERLAYER_ARGS=()
+    
+    if [[ "$STEALTH_MODE" -eq 0 ]]; then
+        BARRIERLAYER_ARGS+=("--no-stealth")
+    fi
+    if [[ "$ANTI_DEBUG" -eq 0 ]]; then
+        BARRIERLAYER_ARGS+=("--no-anti-debug")
+    fi
+    if [[ "$HIDE_PROCESS" -eq 0 ]]; then
+        BARRIERLAYER_ARGS+=("--no-hide-process")
+    fi
+    if [[ "$KERNEL_MODE" -eq 0 ]]; then
+        BARRIERLAYER_ARGS+=("--no-kernel")
+    fi
+    if [[ "$VERBOSE" -eq 1 ]]; then
+        BARRIERLAYER_ARGS+=("--verbose")
     fi
     
-    # Configurar LD_PRELOAD
-    if [[ -n "$LD_PRELOAD" ]]; then
-        export LD_PRELOAD="$HOOK_LIBRARY:$LD_PRELOAD"
-    else
-        export LD_PRELOAD="$HOOK_LIBRARY"
-    fi
-    
-    # Configurações de logging
-    export BARRIERLAYER_LOG_LEVEL="${BARRIERLAYER_LOG_LEVEL:-2}"
-    export BARRIERLAYER_DETAILED="${BARRIERLAYER_DETAILED:-1}"
-    export BARRIERLAYER_STACK_TRACE="${BARRIERLAYER_STACK_TRACE:-1}"
-    
-    # Configurações anti-cheat
-    export BARRIERLAYER_STEALTH_MODE="1"
-    export BARRIERLAYER_ANTI_CHEAT="1"
-    
-    log_success "BarrierLayer configured"
+    log_success "BarrierLayer arguments prepared."
 }
 
 # Executar aplicação
@@ -292,6 +294,7 @@ launch_application() {
 }
 
 # Menu interativo
+# Menu interativo
 show_interactive_menu() {
     while true; do
         clear
@@ -309,12 +312,15 @@ show_interactive_menu() {
         echo "2) 🚂 Launch with Proton"
         echo "3) 🐧 Launch as native Linux"
         echo "4) 🔍 Auto-detect (recommended)"
-        echo "5) ⚙️  Configure BarrierLayer"
+        echo "5) ⚙️  Configure BarrierLayer (Build Options)"
         echo "6) 📊 Show system info"
+        echo "7) 👻 Toggle Stealth Mode (Current: $([ "$STEALTH_MODE" -eq 1 ] && echo "ON" || echo "OFF"))"
+        echo "8) 🛡️ Toggle Anti-Debug (Current: $([ "$ANTI_DEBUG" -eq 1 ] && echo "ON" || echo "OFF"))"
+        echo "9) 🕵️ Toggle Process Hiding (Current: $([ "$HIDE_PROCESS" -eq 1 ] && echo "ON" || echo "OFF"))"
         echo "0) ❌ Exit"
         echo ""
         
-        read -p "Choose option [0-6]: " choice
+        read -p "Choose option [0-9]: " choice
         
         case $choice in
             1)
@@ -351,11 +357,25 @@ show_interactive_menu() {
                 show_system_info
                 read -p "Press Enter to continue..."
                 ;;
+            7)
+                STEALTH_MODE=$((1-STEALTH_MODE))
+                log_info "Stealth Mode set to: $([ "$STEALTH_MODE" -eq 1 ] && echo "ON" || echo "OFF")"
+                sleep 1
+                ;;
+            8)
+                ANTI_DEBUG=$((1-ANTI_DEBUG))
+                log_info "Anti-Debug set to: $([ "$ANTI_DEBUG" -eq 1 ] && echo "ON" || echo "OFF")"
+                sleep 1
+                ;;
+            9)
+                HIDE_PROCESS=$((1-HIDE_PROCESS))
+                log_info "Process Hiding set to: $([ "$HIDE_PROCESS" -eq 1 ] && echo "ON" || echo "OFF")"
+                sleep 1
+                ;;
             0)
                 exit 0
                 ;;
-            *)
-                log_error "Invalid option!"
+            *)n                log_error "Invalid option!"
                 sleep 1
                 ;;
         esac
@@ -384,7 +404,7 @@ show_system_info() {
 
 # Ajuda
 show_help() {
-    echo -e "${CYAN}BarrierLayer Launcher v2.0${NC}"
+    echo -e "${CYAN}BarrierLayer Launcher (Advanced Kernel-Mode)${NC}"
     echo ""
     echo "Usage: $0 [OPTIONS] <executable> [args...]"
     echo ""
@@ -395,34 +415,135 @@ show_help() {
     echo "  -i, --interactive   Show interactive menu"
     echo "  -v, --verbose       Verbose output"
     echo "  -h, --help          Show this help"
+    echo "  --stealth           Enable stealth mode (default)"
+    echo "  --no-stealth        Disable stealth mode"
+    echo "  --anti-debug        Enable anti-debug (default)"
+    echo "  --no-anti-debug     Disable anti-debug"
+    echo "  --hide-process      Enable process hiding (default)"
+    echo "  --no-hide-process   Disable process hiding"
+    echo "  --kernel-mode       Enable kernel mode features (default)"
+    echo "  --no-kernel-mode    Disable kernel mode features"
     echo ""
     echo -e "${YELLOW}Examples:${NC}"
-    echo "  $0 game.exe                    # Auto-detect environment"
+    echo "  $0 game.exe                    # Auto-detect environment with kernel-mode features"
+    echo "  $0 --no-stealth game.exe       # Disable stealth mode"
     echo "  $0 -w game.exe                 # Force Wine"
     echo "  $0 -p game.exe                 # Force Proton"
     echo "  $0 -i                          # Interactive mode"
     echo "  $0 /usr/bin/steam steam://run/123456  # Native Steam"
     echo ""
-    echo -e "${YELLOW}Environment Variables:${NC}"
-    echo "  BARRIERLAYER_LOG_LEVEL=0-4     # Log level (0=trace, 4=error)"
-    echo "  BARRIERLAYER_DETAILED=1        # Detailed logging"
-    echo "  BARRIERLAYER_STACK_TRACE=1     # Stack traces"
+    echo -e "${YELLOW}Note:${NC} Environment variables like LD_PRELOAD are no longer used directly."
+    echo "      Kernel-mode features are managed by the stealth_launcher binary."
     echo ""
 }
 
 # Função principal
 main() {
 <<<<<<< HEAD
-    # Carregar configuração padrão do config.mk
-    if [[ -f "$CONFIG_FILE" ]]; then
-        DEFAULT_MODE_FROM_CONFIG=$(grep -E '^\s*DEFAULT_LAUNCHER\s*=' "$CONFIG_FILE" | cut -d'=' -f2 | tr -d '[:space:]')
-        if [[ -n "$DEFAULT_MODE_FROM_CONFIG" && "$DEFAULT_MODE_FROM_CONFIG" != "auto" ]]; then
-            LAUNCH_MODE="$DEFAULT_MODE_FROM_CONFIG"
-            log_debug "Default launch mode loaded from config.mk: $LAUNCH_MODE"
-        fi
+    # Função principal
+main() {
+    # Parse argumentos
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -w|--wine)
+                LAUNCH_MODE="wine"
+                shift
+                ;;
+            -p|--proton)
+                LAUNCH_MODE="proton"
+                shift
+                ;;
+            -n|--native)
+                LAUNCH_MODE="native"
+                shift
+                ;;
+            -i|--interactive)
+                show_banner
+                detect_wine
+                detect_proton
+                detect_steam
+                show_interactive_menu
+                if [[ -z "$TARGET_EXECUTABLE" ]]; then
+                    read -p "Enter executable path: " TARGET_EXECUTABLE
+                fi
+                break
+                ;;
+            -v|--verbose)
+                VERBOSE=1
+                shift
+                ;;
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            --stealth)
+                STEALTH_MODE=1
+                shift
+                ;;
+            --no-stealth)
+                STEALTH_MODE=0
+                shift
+                ;;
+            --anti-debug)
+                ANTI_DEBUG=1
+                shift
+                ;;
+            --no-anti-debug)
+                ANTI_DEBUG=0
+                shift
+                ;;
+            --hide-process)
+                HIDE_PROCESS=1
+                shift
+                ;;
+            --no-hide-process)
+                HIDE_PROCESS=0
+                shift
+                ;;
+            --kernel-mode)
+                KERNEL_MODE=1
+                shift
+                ;;
+            --no-kernel-mode)
+                KERNEL_MODE=0
+                shift
+                ;;
+            -*)
+                log_error "Unknown option: $1"
+                show_help
+                exit 1
+                ;;
+            *)
+                TARGET_EXECUTABLE="$1"
+                shift
+                break
+                ;;
+        esac
+    done
+    
+    # Verificar se executável foi fornecido
+    if [[ -z "$TARGET_EXECUTABLE" ]]; then
+        show_help
+        exit 1
     fi
-
-    # Parse argumentos (eles podem sobrepor a configuração padrão)
+    
+    # Verificar se executável existe
+    if [[ ! -f "$TARGET_EXECUTABLE" && ! -x "$TARGET_EXECUTABLE" ]]; then
+        log_error "Executable not found: $TARGET_EXECUTABLE"
+        exit 1
+    fi
+    
+    # Detectar ambiente se não especificado
+    if [[ -z "$LAUNCH_MODE" ]]; then
+        detect_environment
+    }
+    
+    # Configurar BarrierLayer
+    setup_barrierlayer
+    
+    # Lançar aplicação
+    launch_application "$TARGET_EXECUTABLE" "$@"
+}
 =======
     # Parse argumentos
 >>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638

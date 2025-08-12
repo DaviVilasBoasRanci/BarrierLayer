@@ -1,736 +1,245 @@
 #!/bin/bash
-<<<<<<< HEAD
-# Basic configuration for BarrierLayer
+# Interactive configuration for BarrierLayer using dialog
 
-# Cores
-=======
-
-# BarrierLayer Configuration System
-# Autor: BarrierLayer Team
-# Versão: 2.0
-
-set -e
-
-# Cores para output
->>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638
+# Cores para mensagens do script
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-<<<<<<< HEAD
 NC='\033[0m'
 
-echo -e "${BLUE}Configuring BarrierLayer...${NC}"
+# Cores para o dialog (usando sequências de escape \Z)
+# Veja man dialog para mais opções de cores
+DLG_RED="\Z1"
+DLG_GREEN="\Z2"
+DLG_YELLOW="\Z3"
+DLG_BLUE="\Z4"
+DLG_MAGENTA="\Z5"
+DLG_CYAN="\Z6"
+DLG_WHITE="\Z7"
+DLG_BLACK="\Z0"
+DLG_NORMAL="\Z0"
 
-#--- Seleção do Lançador Padrão ---
-echo ""
-echo -e "${YELLOW}Please choose your default launch method:${NC}"
-echo "1) Proton (Recommended for Steam games)"
-echo "2) Wine (For non-Steam games)"
-echo "3) Auto-Detect (Launcher will decide)"
+# Check if dialog is installed
+if ! command -v dialog &> /dev/null
+then
+    echo -e "${RED}Error:${NC} 'dialog' command not found."
+    echo -e "Please install 'dialog' to use the interactive configuration."
+    echo -e "  On Debian/Ubuntu: ${YELLOW}sudo apt-get install dialog${NC}"
+    echo -e "  On Fedora/RHEL:   ${YELLOW}sudo yum install dialog${NC}"
+    echo -e "  On Arch Linux:    ${YELLOW}sudo pacman -S dialog${NC}"
+    exit 1
+fi
 
-read -p "Enter your choice [1-3]: " choice
+# Temporary file for dialog output
+TEMP_FILE=$(mktemp)
 
-LAUNCH_METHOD="auto" # Padrão é auto-detect
-case $choice in
-    1)
-        LAUNCH_METHOD="proton"
-        echo -e "${GREEN}Default launcher set to: Proton${NC}"
-        ;;
-    2)
-        LAUNCH_METHOD="wine"
-        echo -e "${GREEN}Default launcher set to: Wine${NC}"
-        ;;
-    3)
-        LAUNCH_METHOD="auto"
-        echo -e "${GREEN}Default launcher set to: Auto-Detect${NC}"
-        ;;
-    *)
-        echo -e "${YELLOW}Invalid choice. Defaulting to Auto-Detect.${NC}"
-        LAUNCH_METHOD="auto"
-        ;;
-esac
+# Function to read a config value from config.mk
+get_config_value() {
+    if [ -f config.mk ]; then
+        grep "^$1 =" config.mk | cut -d'=' -f2 | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//'
+    else
+        echo ""
+    fi
+}
 
-#--- Criação do config.mk ---
+# Read current configuration or set defaults
+DEFAULT_LAUNCHER=$(get_config_value "DEFAULT_LAUNCHER")
+BUILD_MODE=$(get_config_value "BUILD_MODE")
+BUILD_KERNEL=$(get_config_value "BUILD_KERNEL")
+BUILD_GUI=$(get_config_value "BUILD_GUI")
+ENABLE_ULTRA_LOGGING=$(get_config_value "ENABLE_ULTRA_LOGGING")
+USE_WINE=$(get_config_value "USE_WINE")
+USE_PROTON=$(get_config_value "USE_PROTON")
+ENABLE_FPS_OVERLAY=$(get_config_value "ENABLE_FPS_OVERLAY")
+ENABLE_LTO=$(get_config_value "ENABLE_LTO")
+ENABLE_NATIVE=$(get_config_value "ENABLE_NATIVE")
+
+# Set default values if not found
+DEFAULT_LAUNCHER=${DEFAULT_LAUNCHER:-auto}
+BUILD_MODE=${BUILD_MODE:-release}
+BUILD_KERNEL=${BUILD_KERNEL:-Y}
+BUILD_GUI=${BUILD_GUI:-Y}
+ENABLE_ULTRA_LOGGING=${ENABLE_ULTRA_LOGGING:-Y}
+USE_WINE=${USE_WINE:-0}
+USE_PROTON=${USE_PROTON:-0}
+ENABLE_FPS_OVERLAY=${ENABLE_FPS_OVERLAY:-no}
+ENABLE_LTO=${ENABLE_LTO:-N}
+ENABLE_NATIVE=${ENABLE_NATIVE:-N}
+
+# --- Main Menu ---
+while true; do
+    dialog --clear --colors --backtitle "${DLG_BLUE}BarrierLayer Configuration${DLG_NORMAL}" \
+           --title "${DLG_YELLOW}Main Configuration Menu${DLG_NORMAL}" \
+           --menu "${DLG_CYAN}Choose a configuration category:${DLG_NORMAL}" 18 60 7 \
+           "1" "${DLG_GREEN}General Build Options${DLG_NORMAL}" \
+           "2" "${DLG_GREEN}Compatibility Options${DLG_NORMAL}" \
+           "3" "${DLG_GREEN}Optimization Options${DLG_NORMAL}" \
+           "4" "${DLG_GREEN}Launcher and Build Mode${DLG_NORMAL}" \
+           "5" "${DLG_RED}Save and Exit${DLG_NORMAL}" \
+           "6" "${DLG_RED}Discard Changes and Exit${DLG_NORMAL}" 2> "$TEMP_FILE"
+
+    MENU_CHOICE=$(cat "$TEMP_FILE")
+    EXIT_STATUS=$?
+
+    if [ $EXIT_STATUS -ne 0 ] || [ "$MENU_CHOICE" == "6" ]; then
+        # User pressed ESC, Cancel, or chose Discard
+        dialog --clear --colors --backtitle "${DLG_BLUE}BarrierLayer Configuration${DLG_NORMAL}" \
+               --title "${DLG_RED}Discard Changes?${DLG_NORMAL}" \
+               --yesno "${DLG_YELLOW}Are you sure you want to discard all changes and exit?${DLG_NORMAL}" 7 40
+        if [ $? -eq 0 ]; then
+            # User confirmed discard
+            break
+        else
+            # User cancelled discard, return to main menu
+            continue
+        fi
+    fi
+
+    case "$MENU_CHOICE" in
+        1) # General Build Options
+            dialog --clear --colors --backtitle "${DLG_BLUE}BarrierLayer Configuration${DLG_NORMAL}" \
+                   --title "${DLG_YELLOW}General Build Options${DLG_NORMAL}" \
+                   --radiolist "${DLG_CYAN}Choose BarrierLayer Mode:${DLG_NORMAL}" 10 60 2 \
+                   "USER_MODE_ONLY" "User Mode Only (No Kernel Module)" "$([ "$BUILD_KERNEL" == "N" ] && echo "on" || echo "off")" \
+                   "USER_KERNEL_MODE" "User Mode + Kernel Mode" "$([ "$BUILD_KERNEL" == "Y" ] && echo "on" || echo "off")" \
+                   2> "$TEMP_FILE"
+            
+            MODE_CHOICE=$(cat "$TEMP_FILE")
+            if [ $? -eq 0 ]; then # Check if OK was pressed
+                if [ "$MODE_CHOICE" == "USER_MODE_ONLY" ]; then
+                    BUILD_KERNEL="N"
+                elif [ "$MODE_CHOICE" == "USER_KERNEL_MODE" ]; then
+                    BUILD_KERNEL="Y"
+                fi
+            fi
+
+            dialog --clear --colors --backtitle "${DLG_BLUE}BarrierLayer Configuration${DLG_NORMAL}" \
+                   --title "${DLG_YELLOW}General Build Options${DLG_NORMAL}" \
+                   --checklist "${DLG_CYAN}Select other general features:${DLG_NORMAL}" 15 60 5 \
+                   "BUILD_GUI" "Build Graphical User Interface (GUI)" "$([ "$BUILD_GUI" == "Y" ] && echo "on" || echo "off")" \
+                   "ENABLE_ULTRA_LOGGING" "Enable Ultra Logging (detailed internal logs)" "$([ "$ENABLE_ULTRA_LOGGING" == "Y" ] && echo "on" || echo "off")" \
+                   2> "$TEMP_FILE"
+            
+            GENERAL_OPTS=$(cat "$TEMP_FILE")
+            if [ $? -eq 0 ]; then # Check if OK was pressed
+                BUILD_GUI=$(echo "$GENERAL_OPTS" | grep -q "BUILD_GUI" && echo "Y" || echo "N")
+                ENABLE_ULTRA_LOGGING=$(echo "$GENERAL_OPTS" | grep -q "ENABLE_ULTRA_LOGGING" && echo "Y" || echo "N")
+            fi
+            ;;
+        2) # Compatibility Options
+            dialog --clear --colors --backtitle "${DLG_BLUE}BarrierLayer Configuration${DLG_NORMAL}" \
+                   --title "${DLG_YELLOW}Compatibility Options${DLG_NORMAL}" \
+                   --checklist "${DLG_CYAN}Select compatibility features:${DLG_NORMAL}" 15 60 5 \
+                   "USE_WINE" "Enable Wine Support (for Windows applications)" "$([ "$USE_WINE" == "1" ] && echo "on" || echo "off")" \
+                   "USE_PROTON" "Enable Proton Support (for Steam Play compatibility)" "$([ "$USE_PROTON" == "1" ] && echo "on" || echo "off")" \
+                   "ENABLE_FPS_OVERLAY" "Enable In-Game FPS Overlay (OpenGL only for now)" "$([ "$ENABLE_FPS_OVERLAY" == "yes" ] && echo "on" || echo "off")" \
+                   2> "$TEMP_FILE"
+            
+            COMPAT_OPTS=$(cat "$TEMP_FILE")
+            if [ $? -eq 0 ]; then # Check if OK was pressed
+                USE_WINE=$(echo "$COMPAT_OPTS" | grep -q "USE_WINE" && echo "1" || echo "0")
+                USE_PROTON=$(echo "$COMPAT_OPTS" | grep -q "USE_PROTON" && echo "1" || echo "0")
+                ENABLE_FPS_OVERLAY=$(echo "$COMPAT_OPTS" | grep -q "ENABLE_FPS_OVERLAY" && echo "yes" || echo "no")
+            fi
+            ;;
+        3) # Optimization Options
+            dialog --clear --colors --backtitle "${DLG_BLUE}BarrierLayer Configuration${DLG_NORMAL}" \
+                   --title "${DLG_YELLOW}Optimization Options${DLG_NORMAL}" \
+                   --checklist "${DLG_CYAN}Select optimization features:${DLG_NORMAL}" 15 60 5 \
+                   "ENABLE_LTO" "Enable Link-Time Optimization (LTO - smaller, faster binaries)" "$([ "$ENABLE_LTO" == "Y" ] && echo "on" || echo "off")" \
+                   "ENABLE_NATIVE" "Enable Native CPU Optimizations (tailored for your CPU, may not be portable)" "$([ "$ENABLE_NATIVE" == "Y" ] && echo "on" || echo "off")" \
+                   2> "$TEMP_FILE"
+            
+            OPT_OPTS=$(cat "$TEMP_FILE")
+            if [ $? -eq 0 ]; then # Check if OK was pressed
+                ENABLE_LTO=$(echo "$OPT_OPTS" | grep -q "ENABLE_LTO" && echo "Y" || echo "N")
+                ENABLE_NATIVE=$(echo "$OPT_OPTS" | grep -q "ENABLE_NATIVE" && echo "Y" || echo "N")
+            fi
+            ;;
+        4) # Launcher and Build Mode
+            dialog --clear --colors --backtitle "${DLG_BLUE}BarrierLayer Configuration${DLG_NORMAL}" \
+                   --title "${DLG_YELLOW}Launcher and Build Mode${DLG_NORMAL}" \
+                   --radiolist "${DLG_CYAN}Choose default launch method:${DLG_NORMAL}" 15 60 3 \
+                   "proton" "Proton (Recommended for Steam games)" "$([ "$DEFAULT_LAUNCHER" == "proton" ] && echo "on" || echo "off")" \
+                   "wine" "Wine (For non-Steam games)" "$([ "$DEFAULT_LAUNCHER" == "wine" ] && echo "on" || echo "off")" \
+                   "auto" "Auto-Detect (Launcher will decide)" "$([ "$DEFAULT_LAUNCHER" == "auto" ] && echo "on" || echo "off")" \
+                   2> "$TEMP_FILE"
+            
+            LAUNCHER_CHOICE=$(cat "$TEMP_FILE")
+            if [ $? -eq 0 ]; then # Check if OK was pressed
+                DEFAULT_LAUNCHER="$LAUNCHER_CHOICE"
+            fi
+
+            dialog --clear --colors --backtitle "${DLG_BLUE}BarrierLayer Configuration${DLG_NORMAL}" \
+                   --title "${DLG_YELLOW}Launcher and Build Mode${DLG_NORMAL}" \
+                   --radiolist "${DLG_CYAN}Choose Build Mode:${DLG_NORMAL}" 15 60 3 \
+                   "release" "Release (Optimized, default)" "$([ "$BUILD_MODE" == "release" ] && echo "on" || echo "off")" \
+                   "debug" "Debug (Debugging symbols, no optimization)" "$([ "$BUILD_MODE" == "debug" ] && echo "on" || echo "off")" \
+                   "relwithdebinfo" "Release with Debug Info (Optimized with debugging symbols)" "$([ "$BUILD_MODE" == "relwithdebinfo" ] && echo "on" || echo "off")" \
+                   2> "$TEMP_FILE"
+            
+            BUILD_MODE_CHOICE=$(cat "$TEMP_FILE")
+            if [ $? -eq 0 ]; then # Check if OK was pressed
+                BUILD_MODE="$BUILD_MODE_CHOICE"
+            fi
+            ;;
+        5) # Save and Exit
+            dialog --clear --colors --backtitle "${DLG_BLUE}BarrierLayer Configuration${DLG_NORMAL}" \
+                   --title "${DLG_GREEN}Save Configuration?${DLG_NORMAL}" \
+                   --yesno "${DLG_YELLOW}Are you sure you want to save changes and exit?${DLG_NORMAL}" 7 40
+            if [ $? -eq 0 ]; then
+                # User confirmed save
+                break
+            else
+                # User cancelled save, return to main menu
+                continue
+            fi
+            ;;
+    esac
+done
+
+# --- Write updated configuration to config.mk ---
 echo ""
 echo "Creating config.mk..."
 cat > config.mk << EOL
 # BarrierLayer Configuration
+# This file is automatically generated by 'make config'. Do not edit manually.
 
 # Default launch method (proton, wine, auto)
-DEFAULT_LAUNCHER = ${LAUNCH_METHOD}
+DEFAULT_LAUNCHER = ${DEFAULT_LAUNCHER}
 
-# Compiler
+# Build Mode
+BUILD_MODE = ${BUILD_MODE}
+
+# Build Features
+BUILD_KERNEL = ${BUILD_KERNEL}
+BUILD_GUI = ${BUILD_GUI}
+ENABLE_ULTRA_LOGGING = ${ENABLE_ULTRA_LOGGING}
+
+# Compatibility
+USE_WINE = ${USE_WINE}
+USE_PROTON = ${USE_PROTON}
+
+# FPS Overlay
+ENABLE_FPS_OVERLAY = ${ENABLE_FPS_OVERLAY}
+
+# Optimizations
+ENABLE_LTO = ${ENABLE_LTO}
+ENABLE_NATIVE = ${ENABLE_NATIVE}
+
+# Compiler (not configurable via CLI for now)
 CC = gcc
+AS = nasm
 
-# Flags
-CFLAGS = -Isrc/include -Wall -Wextra -g
-
-# Linker Flags
-LDFLAGS = -ldl -lX11
-
-# Kernel build directory
-KDIR ?= /lib/modules/\\\$(shell uname -r)/build
+# Kernel build directory (not configurable via CLI for now)
+KDIR ?= /lib/modules/$(shell uname -r)/build
 EOL
+
+# Clean up temporary file
+rm -f "$TEMP_FILE"
 
 echo ""
 echo -e "${GREEN}Configuration complete!${NC}"
 echo "You can now run 'make' to build the project."
-echo "To change settings, run this script again."
-=======
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-
-# Arquivo de configuração
-CONFIG_FILE="config.mk"
-CONFIG_H="src/include/config.h"
-
-# Função para log colorido
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-log_step() {
-    echo -e "${PURPLE}[STEP]${NC} $1"
-}
-
-# Banner
-show_banner() {
-    echo -e "${CYAN}"
-    cat << "EOF"
-╔══════════════════════════════════════════════════════════════╗
-║                    BarrierLayer v2.0                        ║
-║              Configuration & Build System                   ║
-║                                                              ║
-║  Advanced Anti-Cheat Bypass for Linux Gaming                ║
-║  Supports: Wine, Proton, EAC, BattlEye                      ║
-╚══════════════════════════════════════════════════════════════╝
-EOF
-    echo -e "${NC}"
-}
-
-# Detectar sistema
-detect_system() {
-    log_step "Detectando sistema..."
-    
-    # Detectar distribuição
-    if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        DISTRO=$ID
-        DISTRO_VERSION=$VERSION_ID
-    else
-        DISTRO="unknown"
-        DISTRO_VERSION="unknown"
-    fi
-    
-    # Detectar arquitetura
-    ARCH=$(uname -m)
-    KERNEL_VERSION=$(uname -r)
-    
-    log_info "Sistema: $PRETTY_NAME ($ARCH)"
-    log_info "Kernel: $KERNEL_VERSION"
-    
-    # Verificar se é compatível
-    if [[ "$ARCH" != "x86_64" ]]; then
-        log_error "BarrierLayer requer arquitetura x86_64"
-        exit 1
-    fi
-}
-
-# Detectar Wine/Proton
-detect_wine_proton() {
-    log_step "Detectando Wine e Proton..."
-    
-    # Detectar Wine
-    WINE_PATH=""
-    WINE_VERSION=""
-    if command -v wine &> /dev/null; then
-        WINE_PATH=$(which wine)
-        WINE_VERSION=$(wine --version 2>/dev/null | head -1)
-        log_success "Wine encontrado: $WINE_VERSION em $WINE_PATH"
-    else
-        log_warning "Wine não encontrado"
-    fi
-    
-    # Detectar Proton
-    PROTON_PATHS=(
-        "$HOME/.steam/steam/steamapps/common/Proton*"
-        "$HOME/.local/share/Steam/steamapps/common/Proton*"
-        "/usr/share/steam/steamapps/common/Proton*"
-    )
-    
-    PROTON_INSTALLATIONS=()
-    for pattern in "${PROTON_PATHS[@]}"; do
-        for path in $pattern; do
-            if [[ -d "$path" && -f "$path/proton" ]]; then
-                version=$(basename "$path")
-                PROTON_INSTALLATIONS+=("$path:$version")
-                log_success "Proton encontrado: $version em $path"
-            fi
-        done
-    done
-    
-    if [[ ${#PROTON_INSTALLATIONS[@]} -eq 0 ]]; then
-        log_warning "Nenhuma instalação do Proton encontrada"
-    fi
-    
-    # Detectar Steam
-    STEAM_PATH=""
-    if command -v steam &> /dev/null; then
-        STEAM_PATH=$(which steam)
-        log_success "Steam encontrado em $STEAM_PATH"
-    else
-        log_warning "Steam não encontrado"
-    fi
-}
-
-# Menu principal de configuração
-show_config_menu() {
-    while true; do
-        clear
-        show_banner
-        
-        echo -e "${YELLOW}=== Menu de Configuração ===${NC}"
-        echo ""
-        echo "1) 🍷 Configurar Wine"
-        echo "2) 🚂 Configurar Proton"
-        echo "3) 🛡️  Configurar Anti-Cheat"
-        echo "4) 🔧 Configurar Build"
-        echo "5) 📊 Configurar Logging"
-        echo "6) 🎯 Configurar Stealth"
-        echo "7) 🖥️  Configurar Interface"
-        echo "8) 📋 Ver Configuração Atual"
-        echo "9) 💾 Salvar e Sair"
-        echo "0) ❌ Sair sem Salvar"
-        echo ""
-        read -p "Escolha uma opção [0-9]: " choice
-        
-        case $choice in
-            1) configure_wine ;;
-            2) configure_proton ;;
-            3) configure_anticheat ;;
-            4) configure_build ;;
-            5) configure_logging ;;
-            6) configure_stealth ;;
-            7) configure_interface ;;
-            8) show_current_config ;;
-            9) save_config && exit 0 ;;
-            0) exit 0 ;;
-            *) log_error "Opção inválida!" && sleep 1 ;;
-        esac
-    done
-}
-
-# Configurar Wine
-configure_wine() {
-    clear
-    echo -e "${YELLOW}=== Configuração do Wine ===${NC}"
-    echo ""
-    
-    # Usar Wine?
-    read -p "Habilitar suporte ao Wine? [Y/n]: " enable_wine
-    enable_wine=${enable_wine:-Y}
-    
-    if [[ "$enable_wine" =~ ^[Yy]$ ]]; then
-        USE_WINE=1
-        
-        # Caminho do Wine
-        if [[ -n "$WINE_PATH" ]]; then
-            echo "Wine detectado: $WINE_PATH"
-            read -p "Usar este caminho? [Y/n]: " use_detected
-            use_detected=${use_detected:-Y}
-            
-            if [[ "$use_detected" =~ ^[Yy]$ ]]; then
-                WINE_BINARY="$WINE_PATH"
-            else
-                read -p "Digite o caminho para o wine: " WINE_BINARY
-            fi
-        else
-            read -p "Digite o caminho para o wine: " WINE_BINARY
-        fi
-        
-        # Prefixo do Wine
-        read -p "Caminho do prefixo Wine [$HOME/.wine]: " wine_prefix
-        WINE_PREFIX=${wine_prefix:-$HOME/.wine}
-        
-        # Arquitetura
-        echo ""
-        echo "Arquitetura do Wine:"
-        echo "1) win64 (64-bit)"
-        echo "2) win32 (32-bit)"
-        read -p "Escolha [1-2]: " wine_arch_choice
-        
-        case $wine_arch_choice in
-            1) WINE_ARCH="win64" ;;
-            2) WINE_ARCH="win32" ;;
-            *) WINE_ARCH="win64" ;;
-        esac
-        
-        log_success "Wine configurado: $WINE_BINARY ($WINE_ARCH)"
-    else
-        USE_WINE=0
-        log_info "Suporte ao Wine desabilitado"
-    fi
-    
-    read -p "Pressione Enter para continuar..."
-}
-
-# Configurar Proton
-configure_proton() {
-    clear
-    echo -e "${YELLOW}=== Configuração do Proton ===${NC}"
-    echo ""
-    
-    # Usar Proton?
-    read -p "Habilitar suporte ao Proton? [Y/n]: " enable_proton
-    enable_proton=${enable_proton:-Y}
-    
-    if [[ "$enable_proton" =~ ^[Yy]$ ]]; then
-        USE_PROTON=1
-        
-        if [[ ${#PROTON_INSTALLATIONS[@]} -gt 0 ]]; then
-            echo "Instalações do Proton encontradas:"
-            for i in "${!PROTON_INSTALLATIONS[@]}"; do
-                IFS=':' read -r path version <<< "${PROTON_INSTALLATIONS[$i]}"
-                echo "$((i+1))) $version"
-            done
-            echo "$((${#PROTON_INSTALLATIONS[@]}+1))) Caminho personalizado"
-            
-            read -p "Escolha uma instalação [1-$((${#PROTON_INSTALLATIONS[@]}+1))]: " proton_choice
-            
-            if [[ "$proton_choice" -le "${#PROTON_INSTALLATIONS[@]}" ]]; then
-                IFS=':' read -r PROTON_PATH PROTON_VERSION <<< "${PROTON_INSTALLATIONS[$((proton_choice-1))]}"
-            else
-                read -p "Digite o caminho para o Proton: " PROTON_PATH
-                PROTON_VERSION=$(basename "$PROTON_PATH")
-            fi
-        else
-            read -p "Digite o caminho para o Proton: " PROTON_PATH
-            PROTON_VERSION=$(basename "$PROTON_PATH")
-        fi
-        
-        # Configurações do Proton
-        read -p "Usar DXVK? [Y/n]: " use_dxvk
-        USE_DXVK=${use_dxvk:-Y}
-        
-        read -p "Usar VKD3D? [Y/n]: " use_vkd3d
-        USE_VKD3D=${use_vkd3d:-Y}
-        
-        read -p "Usar Esync? [Y/n]: " use_esync
-        USE_ESYNC=${use_esync:-Y}
-        
-        read -p "Usar Fsync? [Y/n]: " use_fsync
-        USE_FSYNC=${use_fsync:-Y}
-        
-        log_success "Proton configurado: $PROTON_VERSION"
-    else
-        USE_PROTON=0
-        log_info "Suporte ao Proton desabilitado"
-    fi
-    
-    read -p "Pressione Enter para continuar..."
-}
-
-# Configurar Anti-Cheat
-configure_anticheat() {
-    clear
-    echo -e "${YELLOW}=== Configuração Anti-Cheat ===${NC}"
-    echo ""
-    
-    echo "Sistemas Anti-Cheat suportados:"
-    echo ""
-    
-    # Easy Anti-Cheat
-    read -p "Habilitar proteção contra EAC (Easy Anti-Cheat)? [Y/n]: " enable_eac
-    ENABLE_EAC=${enable_eac:-Y}
-    
-    # BattlEye
-    read -p "Habilitar proteção contra BattlEye? [Y/n]: " enable_battleye
-    ENABLE_BATTLEYE=${enable_battleye:-Y}
-    
-    # Vanguard
-    read -p "Habilitar proteção contra Vanguard? [Y/n]: " enable_vanguard
-    ENABLE_VANGUARD=${enable_vanguard:-Y}
-    
-    # Proteções gerais
-    echo ""
-    echo "Proteções gerais:"
-    read -p "Habilitar detecção de debugger? [Y/n]: " enable_debugger_detection
-    ENABLE_DEBUGGER_DETECTION=${enable_debugger_detection:-Y}
-    
-    read -p "Habilitar proteção de memória? [Y/n]: " enable_memory_protection
-    ENABLE_MEMORY_PROTECTION=${enable_memory_protection:-Y}
-    
-    read -p "Habilitar mascaramento de processo? [Y/n]: " enable_process_masking
-    ENABLE_PROCESS_MASKING=${enable_process_masking:-Y}
-    
-    log_success "Configurações anti-cheat definidas"
-    read -p "Pressione Enter para continuar..."
-}
-
-# Configurar Build
-configure_build() {
-    clear
-    echo -e "${YELLOW}=== Configuração de Build ===${NC}"
-    echo ""
-    
-    # Modo de build
-    echo "Modo de build:"
-    echo "1) Debug (com símbolos de debug)"
-    echo "2) Release (otimizado)"
-    echo "3) RelWithDebInfo (otimizado com debug)"
-    read -p "Escolha [1-3]: " build_mode
-    
-    case $build_mode in
-        1) BUILD_MODE="debug" ;;
-        2) BUILD_MODE="release" ;;
-        3) BUILD_MODE="relwithdebinfo" ;;
-        *) BUILD_MODE="release" ;;
-    esac
-    
-    # Compilar kernel module?
-    read -p "Compilar módulo do kernel? [Y/n]: " build_kernel
-    BUILD_KERNEL=${build_kernel:-Y}
-    
-    # Compilar GUI?
-    read -p "Compilar interface gráfica? [Y/n]: " build_gui
-    BUILD_GUI=${build_gui:-Y}
-    
-    # Otimizações
-    echo ""
-    echo "Otimizações:"
-    read -p "Habilitar otimizações LTO? [y/N]: " enable_lto
-    ENABLE_LTO=${enable_lto:-N}
-    
-    read -p "Habilitar otimizações nativas? [y/N]: " enable_native
-    ENABLE_NATIVE=${enable_native:-N}
-    
-    log_success "Configurações de build definidas: $BUILD_MODE"
-    read -p "Pressione Enter para continuar..."
-}
-
-# Configurar Logging
-configure_logging() {
-    clear
-    echo -e "${YELLOW}=== Configuração de Logging ===${NC}"
-    echo ""
-    
-    # Nível de log
-    echo "Nível de logging:"
-    echo "0) TRACE (muito detalhado)"
-    echo "1) DEBUG (detalhado)"
-    echo "2) INFO (informativo)"
-    echo "3) WARN (apenas avisos)"
-    echo "4) ERROR (apenas erros)"
-    read -p "Escolha [0-4]: " log_level
-    LOG_LEVEL=${log_level:-2}
-    
-    # Ultra logging
-    read -p "Habilitar ultra logging? [Y/n]: " enable_ultra_logging
-    ENABLE_ULTRA_LOGGING=${enable_ultra_logging:-Y}
-    
-    # Stack traces
-    read -p "Habilitar stack traces? [Y/n]: " enable_stack_traces
-    ENABLE_STACK_TRACES=${enable_stack_traces:-Y}
-    
-    # Log para arquivo
-    read -p "Salvar logs em arquivo? [Y/n]: " enable_file_logging
-    ENABLE_FILE_LOGGING=${enable_file_logging:-Y}
-    
-    if [[ "$ENABLE_FILE_LOGGING" =~ ^[Yy]$ ]]; then
-        read -p "Diretório de logs [/tmp]: " log_directory
-        LOG_DIRECTORY=${log_directory:-/tmp}
-        
-        read -p "Tamanho máximo do log (MB) [100]: " max_log_size
-        MAX_LOG_SIZE=${max_log_size:-100}
-    fi
-    
-    log_success "Configurações de logging definidas"
-    read -p "Pressione Enter para continuar..."
-}
-
-# Configurar Stealth
-configure_stealth() {
-    clear
-    echo -e "${YELLOW}=== Configuração de Stealth ===${NC}"
-    echo ""
-    
-    echo "Recursos de stealth:"
-    
-    # Remover LD_PRELOAD
-    read -p "Remover LD_PRELOAD do ambiente? [Y/n]: " remove_ld_preload
-    REMOVE_LD_PRELOAD=${remove_ld_preload:-Y}
-    
-    # Unlinking
-    read -p "Habilitar library unlinking? [Y/n]: " enable_unlinking
-    ENABLE_UNLINKING=${enable_unlinking:-Y}
-    
-    # Mascaramento de arquivos
-    read -p "Bloquear acesso a arquivos sensíveis? [Y/n]: " block_sensitive_files
-    BLOCK_SENSITIVE_FILES=${block_sensitive_files:-Y}
-    
-    # Randomização
-    read -p "Randomizar nomes de processos? [y/N]: " randomize_process_names
-    RANDOMIZE_PROCESS_NAMES=${randomize_process_names:-N}
-    
-    # Injeção de código
-    read -p "Habilitar injeção de código? [y/N]: " enable_code_injection
-    ENABLE_CODE_INJECTION=${enable_code_injection:-N}
-    
-    log_success "Configurações de stealth definidas"
-    read -p "Pressione Enter para continuar..."
-}
-
-# Configurar Interface
-configure_interface() {
-    clear
-    echo -e "${YELLOW}=== Configuração de Interface ===${NC}"
-    echo ""
-    
-    # Interface gráfica
-    read -p "Habilitar interface gráfica? [Y/n]: " enable_gui
-    ENABLE_GUI=${enable_gui:-Y}
-    
-    if [[ "$ENABLE_GUI" =~ ^[Yy]$ ]]; then
-        echo "Toolkit de interface:"
-        echo "1) GTK3"
-        echo "2) GTK4"
-        echo "3) Qt5"
-        echo "4) Qt6"
-        read -p "Escolha [1-4]: " gui_toolkit
-        
-        case $gui_toolkit in
-            1) GUI_TOOLKIT="gtk3" ;;
-            2) GUI_TOOLKIT="gtk4" ;;
-            3) GUI_TOOLKIT="qt5" ;;
-            4) GUI_TOOLKIT="qt6" ;;
-            *) GUI_TOOLKIT="gtk3" ;;
-        esac
-    fi
-    
-    # Interface de linha de comando
-    read -p "Habilitar interface de linha de comando avançada? [Y/n]: " enable_cli
-    ENABLE_CLI=${enable_cli:-Y}
-    
-    # Tray icon
-    read -p "Habilitar ícone na bandeja do sistema? [y/N]: " enable_tray
-    ENABLE_TRAY=${enable_tray:-N}
-    
-    log_success "Configurações de interface definidas"
-    read -p "Pressione Enter para continuar..."
-}
-
-# Mostrar configuração atual
-show_current_config() {
-    clear
-    echo -e "${YELLOW}=== Configuração Atual ===${NC}"
-    echo ""
-    
-    echo -e "${CYAN}Sistema:${NC}"
-    echo "  Distribuição: $DISTRO $DISTRO_VERSION"
-    echo "  Arquitetura: $ARCH"
-    echo "  Kernel: $KERNEL_VERSION"
-    echo ""
-    
-    echo -e "${CYAN}Wine/Proton:${NC}"
-    echo "  Wine: ${USE_WINE:-0} (${WINE_BINARY:-N/A})"
-    echo "  Proton: ${USE_PROTON:-0} (${PROTON_VERSION:-N/A})"
-    echo ""
-    
-    echo -e "${CYAN}Anti-Cheat:${NC}"
-    echo "  EAC: ${ENABLE_EAC:-Y}"
-    echo "  BattlEye: ${ENABLE_BATTLEYE:-Y}"
-    echo "  Vanguard: ${ENABLE_VANGUARD:-Y}"
-    echo ""
-    
-    echo -e "${CYAN}Build:${NC}"
-    echo "  Modo: ${BUILD_MODE:-release}"
-    echo "  Kernel: ${BUILD_KERNEL:-Y}"
-    echo "  GUI: ${BUILD_GUI:-Y}"
-    echo ""
-    
-    echo -e "${CYAN}Logging:${NC}"
-    echo "  Nível: ${LOG_LEVEL:-2}"
-    echo "  Ultra Logging: ${ENABLE_ULTRA_LOGGING:-Y}"
-    echo "  Stack Traces: ${ENABLE_STACK_TRACES:-Y}"
-    echo ""
-    
-    echo -e "${CYAN}Stealth:${NC}"
-    echo "  Remove LD_PRELOAD: ${REMOVE_LD_PRELOAD:-Y}"
-    echo "  Library Unlinking: ${ENABLE_UNLINKING:-Y}"
-    echo "  Block Sensitive Files: ${BLOCK_SENSITIVE_FILES:-Y}"
-    echo ""
-    
-    read -p "Pressione Enter para continuar..."
-}
-
-# Salvar configuração
-save_config() {
-    log_step "Salvando configuração..."
-    
-    # Criar config.mk
-    cat > "$CONFIG_FILE" << EOF
-# BarrierLayer Configuration
-# Generated by configure.sh on $(date)
-
-# System Information
-DISTRO = $DISTRO
-DISTRO_VERSION = $DISTRO_VERSION
-ARCH = $ARCH
-KERNEL_VERSION = $KERNEL_VERSION
-
-# Wine Configuration
-USE_WINE = ${USE_WINE:-0}
-WINE_BINARY = ${WINE_BINARY:-}
-WINE_PREFIX = ${WINE_PREFIX:-}
-WINE_ARCH = ${WINE_ARCH:-win64}
-
-# Proton Configuration
-USE_PROTON = ${USE_PROTON:-0}
-PROTON_PATH = ${PROTON_PATH:-}
-PROTON_VERSION = ${PROTON_VERSION:-}
-USE_DXVK = ${USE_DXVK:-Y}
-USE_VKD3D = ${USE_VKD3D:-Y}
-USE_ESYNC = ${USE_ESYNC:-Y}
-USE_FSYNC = ${USE_FSYNC:-Y}
-
-# Anti-Cheat Configuration
-ENABLE_EAC = ${ENABLE_EAC:-Y}
-ENABLE_BATTLEYE = ${ENABLE_BATTLEYE:-Y}
-ENABLE_VANGUARD = ${ENABLE_VANGUARD:-Y}
-ENABLE_DEBUGGER_DETECTION = ${ENABLE_DEBUGGER_DETECTION:-Y}
-ENABLE_MEMORY_PROTECTION = ${ENABLE_MEMORY_PROTECTION:-Y}
-ENABLE_PROCESS_MASKING = ${ENABLE_PROCESS_MASKING:-Y}
-
-# Build Configuration
-BUILD_MODE = ${BUILD_MODE:-release}
-BUILD_KERNEL = ${BUILD_KERNEL:-Y}
-BUILD_GUI = ${BUILD_GUI:-Y}
-ENABLE_LTO = ${ENABLE_LTO:-N}
-ENABLE_NATIVE = ${ENABLE_NATIVE:-N}
-
-# Logging Configuration
-LOG_LEVEL = ${LOG_LEVEL:-2}
-ENABLE_ULTRA_LOGGING = ${ENABLE_ULTRA_LOGGING:-Y}
-ENABLE_STACK_TRACES = ${ENABLE_STACK_TRACES:-Y}
-ENABLE_FILE_LOGGING = ${ENABLE_FILE_LOGGING:-Y}
-LOG_DIRECTORY = ${LOG_DIRECTORY:-/tmp}
-MAX_LOG_SIZE = ${MAX_LOG_SIZE:-100}
-
-# Stealth Configuration
-REMOVE_LD_PRELOAD = ${REMOVE_LD_PRELOAD:-Y}
-ENABLE_UNLINKING = ${ENABLE_UNLINKING:-Y}
-BLOCK_SENSITIVE_FILES = ${BLOCK_SENSITIVE_FILES:-Y}
-RANDOMIZE_PROCESS_NAMES = ${RANDOMIZE_PROCESS_NAMES:-N}
-ENABLE_CODE_INJECTION = ${ENABLE_CODE_INJECTION:-N}
-
-# Interface Configuration
-ENABLE_GUI = ${ENABLE_GUI:-Y}
-GUI_TOOLKIT = ${GUI_TOOLKIT:-gtk3}
-ENABLE_CLI = ${ENABLE_CLI:-Y}
-ENABLE_TRAY = ${ENABLE_TRAY:-N}
-EOF
-
-    # Criar config.h
-    mkdir -p "$(dirname "$CONFIG_H")"
-    cat > "$CONFIG_H" << EOF
-/* BarrierLayer Configuration Header */
-/* Generated by configure.sh on $(date) */
-
-#ifndef BARRIERLAYER_CONFIG_H
-#define BARRIERLAYER_CONFIG_H
-
-/* System Information */
-#define BARRIERLAYER_DISTRO "$DISTRO"
-#define BARRIERLAYER_DISTRO_VERSION "$DISTRO_VERSION"
-#define BARRIERLAYER_ARCH "$ARCH"
-#define BARRIERLAYER_KERNEL_VERSION "$KERNEL_VERSION"
-
-/* Wine Configuration */
-#define USE_WINE ${USE_WINE:-0}
-#define WINE_BINARY "${WINE_BINARY:-}"
-#define WINE_PREFIX "${WINE_PREFIX:-}"
-#define WINE_ARCH "${WINE_ARCH:-win64}"
-
-/* Proton Configuration */
-#define USE_PROTON ${USE_PROTON:-0}
-#define PROTON_PATH "${PROTON_PATH:-}"
-#define PROTON_VERSION "${PROTON_VERSION:-}"
-#define USE_DXVK $([ "${USE_DXVK:-Y}" = "Y" ] && echo 1 || echo 0)
-#define USE_VKD3D $([ "${USE_VKD3D:-Y}" = "Y" ] && echo 1 || echo 0)
-#define USE_ESYNC $([ "${USE_ESYNC:-Y}" = "Y" ] && echo 1 || echo 0)
-#define USE_FSYNC $([ "${USE_FSYNC:-Y}" = "Y" ] && echo 1 || echo 0)
-
-/* Anti-Cheat Configuration */
-#define ENABLE_EAC $([ "${ENABLE_EAC:-Y}" = "Y" ] && echo 1 || echo 0)
-#define ENABLE_BATTLEYE $([ "${ENABLE_BATTLEYE:-Y}" = "Y" ] && echo 1 || echo 0)
-#define ENABLE_VANGUARD $([ "${ENABLE_VANGUARD:-Y}" = "Y" ] && echo 1 || echo 0)
-#define ENABLE_DEBUGGER_DETECTION $([ "${ENABLE_DEBUGGER_DETECTION:-Y}" = "Y" ] && echo 1 || echo 0)
-#define ENABLE_MEMORY_PROTECTION $([ "${ENABLE_MEMORY_PROTECTION:-Y}" = "Y" ] && echo 1 || echo 0)
-#define ENABLE_PROCESS_MASKING $([ "${ENABLE_PROCESS_MASKING:-Y}" = "Y" ] && echo 1 || echo 0)
-
-/* Build Configuration */
-#define BUILD_MODE "${BUILD_MODE:-release}"
-#define BUILD_KERNEL $([ "${BUILD_KERNEL:-Y}" = "Y" ] && echo 1 || echo 0)
-#define BUILD_GUI $([ "${BUILD_GUI:-Y}" = "Y" ] && echo 1 || echo 0)
-
-/* Logging Configuration */
-#define LOG_LEVEL ${LOG_LEVEL:-2}
-#define ENABLE_ULTRA_LOGGING $([ "${ENABLE_ULTRA_LOGGING:-Y}" = "Y" ] && echo 1 || echo 0)
-#define ENABLE_STACK_TRACES $([ "${ENABLE_STACK_TRACES:-Y}" = "Y" ] && echo 1 || echo 0)
-#define ENABLE_FILE_LOGGING $([ "${ENABLE_FILE_LOGGING:-Y}" = "Y" ] && echo 1 || echo 0)
-#define LOG_DIRECTORY "${LOG_DIRECTORY:-/tmp}"
-#define MAX_LOG_SIZE ${MAX_LOG_SIZE:-100}
-
-/* Stealth Configuration */
-#define REMOVE_LD_PRELOAD $([ "${REMOVE_LD_PRELOAD:-Y}" = "Y" ] && echo 1 || echo 0)
-#define ENABLE_UNLINKING $([ "${ENABLE_UNLINKING:-Y}" = "Y" ] && echo 1 || echo 0)
-#define BLOCK_SENSITIVE_FILES $([ "${BLOCK_SENSITIVE_FILES:-Y}" = "Y" ] && echo 1 || echo 0)
-#define RANDOMIZE_PROCESS_NAMES $([ "${RANDOMIZE_PROCESS_NAMES:-N}" = "Y" ] && echo 1 || echo 0)
-#define ENABLE_CODE_INJECTION $([ "${ENABLE_CODE_INJECTION:-N}" = "Y" ] && echo 1 || echo 0)
-
-/* Interface Configuration */
-#define ENABLE_GUI $([ "${ENABLE_GUI:-Y}" = "Y" ] && echo 1 || echo 0)
-#define GUI_TOOLKIT "${GUI_TOOLKIT:-gtk3}"
-#define ENABLE_CLI $([ "${ENABLE_CLI:-Y}" = "Y" ] && echo 1 || echo 0)
-#define ENABLE_TRAY $([ "${ENABLE_TRAY:-N}" = "Y" ] && echo 1 || echo 0)
-
-#endif /* BARRIERLAYER_CONFIG_H */
-EOF
-
-    log_success "Configuração salva em $CONFIG_FILE e $CONFIG_H"
-}
-
-# Função principal
-main() {
-    show_banner
-    detect_system
-    detect_wine_proton
-    
-    if [[ "$1" == "--auto" ]]; then
-        # Configuração automática com valores padrão
-        log_info "Usando configuração automática..."
-        save_config
-    else
-        show_config_menu
-    fi
-}
-
-# Executar se chamado diretamente
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
-fi
->>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638
+echo "To change settings, run 'make config' again."

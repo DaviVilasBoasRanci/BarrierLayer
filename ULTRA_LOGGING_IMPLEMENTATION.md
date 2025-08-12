@@ -65,11 +65,7 @@ Successfully implemented a comprehensive ultra-detailed logging system for Barri
 ### Ultra Logger Test:
 ```bash
 $ ./simple_test
-<<<<<<< HEAD
-=== Simple BarrierLayer Test ===
-=======
 === Teste Simples do BarrierLayer ===
->>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638
 [2025-08-07 20:23:39.479167] ℹ️  INFO PID:9887 TID:9887 PPID:82 COMM:'simple_test' CMD:'./simple_test ' | Ultra Logger initialized successfully
 SYSTEM: Linux 6.8.0-1025-gke x86_64 | CPU_COUNT:4 PAGE_SIZE:4096 | MEM_USAGE:1664KB CPU_TIME:0.000999s
 STACK_TRACE:
@@ -77,21 +73,12 @@ STACK_TRACE:
   [02] 0x73f9109c09a1 <ultra_logger_init+0x1c0> (./bin/barrierlayer_hook.so)
   [03] 0x73f9109b88aa <file_hooks_init+0xd> (./bin/barrierlayer_hook.so)
   ...
-<<<<<<< HEAD
-✅ barrierlayer_hook.so library loaded successfully!
-📊 Hook verification:
-   CreateFileW: ✅ Present
-   OpenProcess: ✅ Present
-   RegOpenKeyExW: ✅ Present
-🎯 Test completed!
-=======
 ✅ Biblioteca barrierlayer_hook.so carregada com sucesso!
 📊 Verificação de hooks:
    CreateFileW: ✅ Presente
    OpenProcess: ✅ Presente
    RegOpenKeyExW: ✅ Presente
 🎯 Teste concluído!
->>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638
 ```
 
 ### Log File Generation:
@@ -177,8 +164,4 @@ The BarrierLayer Ultra Logging System represents a significant advancement in an
 
 **Status**: ✅ Production Ready (Userspace) | 🚧 In Development (Kernel Mode)
 **Compatibility**: Linux x86_64 | Wine/Proton | EAC/BattlEye
-<<<<<<< HEAD
 **Performance**: Microsecond precision | Thread-safe | Auto-rotating logs
-=======
-**Performance**: Microsecond precision | Thread-safe | Auto-rotating logs
->>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638

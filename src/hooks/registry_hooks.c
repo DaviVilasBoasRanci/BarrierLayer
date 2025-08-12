@@ -1,7 +1,9 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <dlfcn.h>
+#include <wchar.h>
 #include <stddef.h> // Incluído para definir wchar_t
+#include "../include/logger.h"
 
 // Tipos de dados da API do Windows
 #ifndef _WINDEF_
@@ -19,6 +21,8 @@
     typedef long LSTATUS;
 #endif
 
+#define LOG_PATH "/home/davivbrdev/BarrierLayer/barrierlayer_activity.log"
+
 // --- Hook para RegOpenKeyExW ---
 typedef LSTATUS (*RegOpenKeyExW_t)(HKEY, LPCWSTR, DWORD, DWORD, HKEY*);
 static RegOpenKeyExW_t original_RegOpenKeyExW = NULL;
@@ -28,8 +32,11 @@ LSTATUS RegOpenKeyExW(HKEY hKey, LPCWSTR lpSubKey, DWORD ulOptions, DWORD samDes
         original_RegOpenKeyExW = dlsym(RTLD_NEXT, "RegOpenKeyExW");
     }
 
-    fprintf(stderr, "[BarrierLayer Registry Hook] Interceptado: RegOpenKeyExW para a chave: %ls\n", lpSubKey);
-    fflush(stderr);
+    char subKey[260] = {0};
+    wcstombs(subKey, lpSubKey, sizeof(subKey) - 1);
+    char msg[512];
+    snprintf(msg, sizeof(msg), "HOOK: RegOpenKeyExW | Nome da Chave: %s", subKey);
+    logger_log(LOG_PATH, msg);
 
     return original_RegOpenKeyExW(hKey, lpSubKey, ulOptions, samDesired, phkResult);
 }
@@ -43,16 +50,11 @@ LSTATUS RegQueryValueExW(HKEY hKey, LPCWSTR lpValueName, DWORD* lpReserved, DWOR
         original_RegQueryValueExW = dlsym(RTLD_NEXT, "RegQueryValueExW");
     }
 
-<<<<<<< HEAD
-    fprintf(stderr, "[BarrierLayer Registry Hook] Interceptado: RegQueryValueExW para o valor: %ls\n", lpValueName);
-    fflush(stderr);
-=======
     char valueName[260] = {0};
     wcstombs(valueName, lpValueName, sizeof(valueName) - 1);
     char msg[512];
     snprintf(msg, sizeof(msg), "HOOK: RegQueryValueExW | Nome do Valor: %s", valueName);
     logger_log(LOG_PATH, msg);
->>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638
 
     return original_RegQueryValueExW(hKey, lpValueName, lpReserved, lpType, lpData, lpcbData);
 }
