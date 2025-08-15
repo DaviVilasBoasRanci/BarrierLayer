@@ -1,18 +1,17 @@
 #include "../include/logger.h"
-#define LOG_PATH "/home/davivbrdev/BarrierLayer/barrierlayer_activity.log"
+#include "../include/path_utils.h"
 
 #include <stdio.h>
 #include <dlfcn.h>
 #include <stdint.h>
 #include <wchar.h>
 #include <stddef.h>
-#include "logger.h"
 
 // Ofuscação de logs para kernel
 static void logkernel(const char* func, void* param1, uint32_t param2) {
     char buf[128];
     snprintf(buf, sizeof(buf), "KERN:%s|%p:%u", func, param1, param2);
-    logger_log(LOG_PATH, buf);
+    logger_log(get_log_path(), buf);
 }
 
 // --- NtCreateFile ---

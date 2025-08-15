@@ -1,18 +1,17 @@
 #include "../include/logger.h"
-#define LOG_PATH "/home/davivbrdev/BarrierLayer/barrierlayer_activity.log"
+#include "../include/path_utils.h"
 
 #include <stdio.h>
 #include <dlfcn.h>
 #include <stdint.h>
 #include <wchar.h>
 #include <stddef.h>
-#include "logger.h"
 
 // Ofuscação de logs para memória
 static void logmem(const char* func, void* addr, size_t size) {
     char buf[128];
     snprintf(buf, sizeof(buf), "MEM:%s|%p:%zu", func, addr, size);
-    logger_log(LOG_PATH, buf);
+    logger_log(get_log_path(), buf);
 }
 
 // --- VirtualAlloc ---

@@ -1,4 +1,4 @@
-# How to Use BarrierLayer
+# Como Usar o BarrierLayer
 
 This guide details how to configure, compile, and run BarrierLayer to play your games.
 
@@ -61,13 +61,13 @@ For Steam games like Splitgate, it is best to use the integration script directl
 
 1.  In your Steam library, right-click on the game and go to **Properties...**
 2.  In the **General** tab, find the **Launch Options** text box.
-3.  Paste the following command, **using the absolute path** to the script:
+3.  Cole o seguinte comando na caixa de texto. **Lembre-se de substituir `/path/to/your/BarrierLayer` pelo caminho absoluto real** para onde você clonou o projeto. Você pode usar `$HOME` como um atalho para seu diretório pessoal.
 
     ```
-    ENABLE_BARRIERLAYER=1 /home/davivbrdev/BarrierLayer/scripts/run_with_barrierlayer.sh %command%
+    ENABLE_BARRIERLAYER=1 /path/to/your/BarrierLayer/scripts/run_with_barrierlayer.sh %command%
     ```
 
-4.  Close the properties and launch the game from Steam.
+4.  Feche as propriedades e inicie o jogo a partir do Steam.
 
 ## Step 4: Analyzing the Output (Logs)
 

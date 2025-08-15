@@ -57,7 +57,7 @@ static int read_process_memory(pid_t pid, void *addr, void *buffer, size_t size)
     bytes_read = read(fd, buffer, size);
     close(fd);
     
-    return bytes_read == size ? 0 : -1;
+    return bytes_read == (ssize_t)size ? 0 : -1;
 }
 
 // Função para escrever memória de processo remoto
@@ -80,7 +80,7 @@ static int write_process_memory(pid_t pid, void *addr, const void *buffer, size_
     bytes_written = write(fd, buffer, size);
     close(fd);
     
-    return bytes_written == size ? 0 : -1;
+    return bytes_written == (ssize_t)size ? 0 : -1;
 }
 
 // Função para encontrar região de memória executável

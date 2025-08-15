@@ -190,10 +190,22 @@ static void rotate_logs(void) {
     g_logger.current_size = 0;
     g_logger.rotation_counter++;
     
-    // Criar novo arquivo de log
-    snprintf(g_logger.log_paths[g_logger.current_file], PATH_MAX,
-        "/tmp/barrierlayer_ultra_%d_%d.log", 
-        getpid(), g_logger.rotation_counter);
+    // Criar novo arquivo de log dinamicamente
+    const char* home_dir = getenv("HOME");
+    if (home_dir) {
+        char dir_path[PATH_MAX];
+        snprintf(dir_path, sizeof(dir_path), "%s/BarrierLayer", home_dir);
+        mkdir(dir_path, 0755); // Cria o diretório se não existir
+        
+        snprintf(g_logger.log_paths[g_logger.current_file], PATH_MAX,
+            "%s/barrierlayer_ultra_%d_%d.log", 
+            dir_path, getpid(), g_logger.rotation_counter);
+    } else {
+        // Fallback para /tmp se HOME não estiver definido
+        snprintf(g_logger.log_paths[g_logger.current_file], PATH_MAX,
+            "/tmp/barrierlayer_ultra_%d_%d.log", 
+            getpid(), g_logger.rotation_counter);
+    }
     
     g_logger.log_files[g_logger.current_file] = 
         fopen(g_logger.log_paths[g_logger.current_file], "w");
@@ -209,6 +221,7 @@ static void rotate_logs(void) {
     
     pthread_mutex_unlock(&g_logger.log_mutex);
 }
+
 
 // Thread para rotação automática de logs
 static void* rotation_thread_func(void *arg) {

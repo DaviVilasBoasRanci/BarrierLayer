@@ -1,13 +1,12 @@
 #include "../include/logger.h"
-#define LOG_PATH "/home/davivbrdev/BarrierLayer/barrierlayer_activity.log"
+#include "../include/path_utils.h"
 
 // Exemplo de uso em um hook:
-// logger_log(LOG_PATH, "Interceptando NtQuerySystemInformation");
+// logger_log(get_log_path(), "Interceptando NtQuerySystemInformation");
 
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <stddef.h> // Para NULL
-#include "logger.h"
 #include <stdio.h>
 
 // Definição (simplificada) das classes de informação do sistema
@@ -31,7 +30,7 @@ unsigned long NtQuerySystemInformation(unsigned int SystemInformationClass, void
     }
     char msg[160];
     snprintf(msg, sizeof(msg), "HOOK: NtQuerySystemInformation | Classe: %s (%u)", class_name, SystemInformationClass);
-    logger_log(LOG_PATH, msg);
+    logger_log(get_log_path(), msg);
     if (real_NtQuerySystemInformation) {
         return real_NtQuerySystemInformation(SystemInformationClass, SystemInformation, SystemInformationLength, ReturnLength);
     } else {

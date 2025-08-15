@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include "../include/logger.h"
 #include "../include/ultra_logger.h"
+#include "../include/performance.h"
 
 // Definições do Windows para compatibilidade
 typedef void* HANDLE;
@@ -29,7 +30,7 @@ typedef void* LPSECURITY_ATTRIBUTES;
 void SetLastError(DWORD error) { errno = error; }
 DWORD GetLastError(void) { return errno; }
 
-#define LOG_PATH "/tmp/barrierlayer_activity.log"
+// A definição de LOG_PATH foi movida para o ultra_logger para ser dinâmica.
 
 // Ponteiro para função original
 static void* (*real_CreateFileW)(const wchar_t*, unsigned long, unsigned long, void*, unsigned long, unsigned long, void*) = NULL;
@@ -53,8 +54,8 @@ void* CreateFileW(const wchar_t* lpFileName, unsigned long dwDesiredAccess, unsi
     ULTRA_TRACE("FILE", "CreateFileW called: file='%s' access=0x%lx share=0x%lx disp=0x%lx flags=0x%lx",
                 filename_utf8, dwDesiredAccess, dwShareMode, dwCreationDisposition, dwFlagsAndAttributes);
     
-    // Verificar se é tentativa de acesso a arquivos sensíveis
-    if (lpFileName) {
+    // Verificar se é tentativa de acesso a arquivos sensíveis (apenas no modo SECURITY)
+    if (get_performance_profile() == PROFILE_SECURITY && lpFileName) {
         const wchar_t *sensitive_files[] = {
             L"barrierlayer", L"hook", L"inject", L"cheat", L"bypass", 
             L"wine", L"proton", L"ld_preload", NULL

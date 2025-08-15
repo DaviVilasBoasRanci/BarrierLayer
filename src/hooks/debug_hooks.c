@@ -1,18 +1,18 @@
 #include "../include/logger.h"
-#define LOG_PATH "/home/davivbrdev/BarrierLayer/barrierlayer_activity.log"
+#include "../include/path_utils.h"
+#include "../include/performance.h"
 
 #include <stdio.h>
 #include <dlfcn.h>
 #include <stdint.h>
 #include <wchar.h>
 #include <string.h>
-#include "logger.h"
 
 // Ofuscação de logs para debugging
 static void logdbg(const char* func, void* param1, uint32_t param2) {
     char buf[128];
     snprintf(buf, sizeof(buf), "DBG:%s|%p:%u", func, param1, param2);
-    logger_log(LOG_PATH, buf);
+    logger_log(get_log_path(), buf);
 }
 
 // --- IsDebuggerPresent ---
@@ -241,8 +241,8 @@ void* FindWindowA(const char* lpClassName, const char* lpWindowName) {
     }
     logdbg("FindWindowA", (void*)lpClassName, 0);
     
-    // Interceptar janelas de debuggers conhecidos
-    if (lpClassName) {
+    // Interceptar janelas de debuggers conhecidos (apenas no modo SECURITY)
+    if (get_performance_profile() == PROFILE_SECURITY && lpClassName) {
         if (strstr(lpClassName, "OLLYDBG") || 
             strstr(lpClassName, "WinDbgFrameClass") ||
             strstr(lpClassName, "ID") ||
@@ -265,8 +265,8 @@ void* FindWindowW(const wchar_t* lpClassName, const wchar_t* lpWindowName) {
     }
     logdbg("FindWindowW", (void*)lpClassName, 0);
     
-    // Interceptar janelas de debuggers conhecidos
-    if (lpClassName) {
+    // Interceptar janelas de debuggers conhecidos (apenas no modo SECURITY)
+    if (get_performance_profile() == PROFILE_SECURITY && lpClassName) {
         wchar_t debugger_classes[][32] = {
             L"OLLYDBG", L"WinDbgFrameClass", L"ID", L"Zeta Debugger"
         };

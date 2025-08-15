@@ -107,7 +107,7 @@ CORE_OBJECTS_32 = $(patsubst %.c,%.o32,$(CORE_SOURCES))
 ASM_OBJECTS_32 = $(patsubst %.asm,%.o32,$(ASM_SOURCES))
 
 # Executáveis
-MAIN_BINARY = $(BIN_DIR)/barrierlayer
+MAIN_BINARY = $(BIN_DIR)/barrierlayer-cli
 HHOOK_LIBRARY = $(BIN_DIR)/barrierlayer_hook.so
 HHOOK_LIBRARY_32 = $(BIN_DIR)/barrierlayer_hook32.so
 GUI_BINARY = $(BIN_DIR)/barrierlayer_gui
@@ -176,7 +176,7 @@ $(HHOOK_LIBRARY_32): $(HHOOK_OBJECTS_32) $(CORE_OBJECTS_32) $(ASM_OBJECTS_32) $(
 
 
 # Executáveis
-MAIN_BINARY = $(BIN_DIR)/barrierlayer
+MAIN_BINARY = $(BIN_DIR)/barrierlayer-cli
 HHOOK_LIBRARY = $(BIN_DIR)/barrierlayer_hook.so
 GUI_BINARY = $(BIN_DIR)/barrierlayer_gui
 TEST_BINARY = $(BIN_DIR)/test_runner
@@ -414,7 +414,7 @@ endif
 	@echo -e "$(BLUE)[INSTALL]$(NC) Copying documentation to /usr/local/share/barrierlayer/docs/"
 	sudo cp -r docs/ /usr/local/share/barrierlayer/ 2>/dev/null || true
 	@echo -e "$(BLUE)[INSTALL]$(NC) Setting executable permissions..."
-	sudo chmod +x /usr/local/bin/barrierlayer*
+	sudo chmod +x /usr/local/bin/barrierlayer-cli
 	sudo chmod +x /usr/local/bin/stealth_launcher
 	sudo chmod +x /usr/local/bin/advanced_injection
 	@echo -e "$(GREEN)[SUCCESS]$(NC) BarrierLayer installed to /usr/local/"
@@ -423,7 +423,7 @@ endif
 uninstall:
 	@echo -e "$(BLUE)[UNINSTALL]$(NC) Removing BarrierLayer..."
 	@echo -e "$(BLUE)[UNINSTALL]$(NC) Removing binaries from /usr/local/bin/"
-	sudo rm -f /usr/local/bin/barrierlayer*
+	sudo rm -f /usr/local/bin/barrierlayer-cli
 	sudo rm -f /usr/local/bin/stealth_launcher
 	sudo rm -f /usr/local/bin/advanced_injection
 	@echo -e "$(BLUE)[UNINSTALL]$(NC) Removing hook library from /usr/local/lib/"

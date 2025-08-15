@@ -10,11 +10,14 @@
 static char exe_path[1024] = "";
 
 static void on_file_set(GtkFileChooserButton *button, gpointer user_data) {
+    (void)user_data; // Mark as unused
     const char *filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(button));
     strncpy(exe_path, filename, sizeof(exe_path)-1);
 }
 
 static void on_run_clicked(GtkButton *button, gpointer user_data) {
+    (void)button;    // Mark as unused
+    (void)user_data; // Mark as unused
     if (strlen(exe_path) == 0) {
         GtkWidget *dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_OK, "Selecione um arquivo .exe primeiro!");
         gtk_dialog_run(GTK_DIALOG(dialog));
@@ -24,7 +27,7 @@ static void on_run_clicked(GtkButton *button, gpointer user_data) {
     // Monta comando para rodar com BarrierLayer
     char command[2048];
     snprintf(command, sizeof(command), "ENABLE_BARRIERLAYER=1 ./scripts/run_with_barrierlayer.sh '%s'", exe_path);
-    system(command);
+    (void)system(command);
 }
 
 int main(int argc, char *argv[]) {

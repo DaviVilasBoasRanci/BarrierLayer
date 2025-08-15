@@ -1,17 +1,16 @@
 #include "../include/logger.h"
-#define LOG_PATH "/home/davivbrdev/BarrierLayer/barrierlayer_activity.log"
+#include "../include/path_utils.h"
 
 #include <stdio.h>
 #include <dlfcn.h>
 #include <stdint.h>
 #include <wchar.h>
-#include "logger.h"
 
 // Ofuscação de logs para hardware
 static void loghw(const char* func, void* param1, void* param2) {
     char buf[128];
     snprintf(buf, sizeof(buf), "HW:%s|%p-%p", func, param1, param2);
-    logger_log(LOG_PATH, buf);
+    logger_log(get_log_path(), buf);
 }
 
 // --- GetSystemInfo ---

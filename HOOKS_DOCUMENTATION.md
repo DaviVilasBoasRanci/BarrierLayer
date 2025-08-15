@@ -338,7 +338,7 @@ ENABLE_BARRIERLAYER=1 run_with_barrierlayer.sh %command%
 
 ## Logs de Atividade
 
-Todos os hooks geram logs em `/home/davivbrdev/BarrierLayer/barrierlayer_activity.log` com informações ofuscadas para análise e debugging.
+Todos os hooks geram logs em `$HOME/BarrierLayer/barrierlayer_activity.log` com informações ofuscadas para análise e debugging.
 
 ## Total de Hooks Implementados
 

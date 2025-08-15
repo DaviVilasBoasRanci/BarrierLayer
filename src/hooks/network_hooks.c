@@ -1,20 +1,189 @@
 #include "../include/logger.h"
-#define LOG_PATH "/home/davivbrdev/BarrierLayer/barrierlayer_activity.log"
-
+#include "../include/path_utils.h"
+#include "../include/performance.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <dlfcn.h>
 #include <wchar.h>
 #include <stdint.h>
-#include "logger.h"
+#include <netdb.h>
+#include <string.h>
+#include <limits.h> 
+#include <sys/socket.h>
 
-// Ofuscação de logs para stealth
+#define MAX_DOMAINS 100
+#define MAX_DOMAIN_LEN 256
+
+static char log_path[PATH_MAX];
+static char config_path[PATH_MAX];
+static char* blocked_domains[MAX_DOMAINS];
+static int num_blocked_domains = 0;
+
+static void load_blocked_domains(const char* path) {
+    FILE* file = fopen(path, "r");
+    if (!file) {
+        logger_log(log_path, "Network config file not found, skipping.");
+        return;
+    }
+    char line[MAX_DOMAIN_LEN];
+    while (fgets(line, sizeof(line), file)) {
+        if (line[0] == '#' || line[0] == '\n') continue;
+        line[strcspn(line, "\n")] = 0;
+        if (num_blocked_domains < MAX_DOMAINS) {
+            blocked_domains[num_blocked_domains] = strdup(line);
+            num_blocked_domains++;
+        }
+    }
+    fclose(file);
+    char log_buf[128];
+    snprintf(log_buf, sizeof(log_buf), "Loaded %d domains from %s", num_blocked_domains, path);
+    logger_log(log_path, log_buf);
+}
+
+__attribute__((constructor))
+static void initialize_network_hooks() {
+    const char* home_dir = getenv("HOME");
+    if (home_dir) {
+        snprintf(log_path, sizeof(log_path), "%s/BarrierLayer/barrierlayer_activity.log", home_dir);
+        snprintf(config_path, sizeof(config_path), "%s/BarrierLayer/network.conf", home_dir);
+    } else {
+        snprintf(log_path, sizeof(log_path), "./barrierlayer_activity.log");
+        snprintf(config_path, sizeof(config_path), "./network.conf");
+    }
+    logger_log(log_path, "BarrierLayer network hooks initialized.");
+    load_blocked_domains(config_path);
+}
+
 static void lognet(const char* func, void* addr, int port) {
     char buf[128];
     snprintf(buf, sizeof(buf), "NET:%s|%p:%d", func, addr, port);
-    logger_log(LOG_PATH, buf);
+    logger_log(log_path, buf);
 }
 
-// --- WSAStartup ---
+// --- Corrected Signatures ---
+
+static struct hostent* (*real_gethostbyname)(const char*) = NULL;
+struct hostent* gethostbyname(const char* name) {
+    if (get_performance_profile() == PROFILE_SECURITY) {
+        for (int i = 0; i < num_blocked_domains; i++) {
+            if (name && strcmp(name, blocked_domains[i]) == 0) {
+                char log_buf[256];
+                snprintf(log_buf, sizeof(log_buf), "BLOCKED: gethostbyname call for forbidden host: %s", name);
+                logger_log(log_path, log_buf);
+                h_errno = HOST_NOT_FOUND;
+                return NULL;
+            }
+        }
+    }
+    if (!real_gethostbyname) {
+        real_gethostbyname = dlsym(RTLD_NEXT, "gethostbyname");
+    }
+    lognet("gethostbyname", (void*)name, 0);
+    if (real_gethostbyname) {
+        return real_gethostbyname(name);
+    }
+    h_errno = HOST_NOT_FOUND;
+    return NULL;
+}
+
+static int (*real_connect)(int, const struct sockaddr*, socklen_t) = NULL;
+int connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
+    if (!real_connect) {
+        real_connect = dlsym(RTLD_NEXT, "connect");
+    }
+    lognet("connect", (void*)addr, addrlen);
+    if (real_connect) {
+        return real_connect(sockfd, addr, addrlen);
+    }
+    return -1;
+}
+
+static int (*real_bind)(int, const struct sockaddr*, socklen_t) = NULL;
+int bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
+    if (!real_bind) {
+        real_bind = dlsym(RTLD_NEXT, "bind");
+    }
+    lognet("bind", (void*)addr, addrlen);
+    if (real_bind) {
+        return real_bind(sockfd, addr, addrlen);
+    }
+    return -1;
+}
+
+static int (*real_accept)(int, struct sockaddr*, socklen_t*) = NULL;
+int accept(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
+    if (!real_accept) {
+        real_accept = dlsym(RTLD_NEXT, "accept");
+    }
+    lognet("accept", (void*)addr, 0);
+    if (real_accept) {
+        return real_accept(sockfd, addr, addrlen);
+    }
+    return -1;
+}
+
+static ssize_t (*real_send)(int, const void*, size_t, int) = NULL;
+ssize_t send(int sockfd, const void* buf, size_t len, int flags) {
+    if (!real_send) {
+        real_send = dlsym(RTLD_NEXT, "send");
+    }
+    lognet("send", (void*)buf, len);
+    if (real_send) {
+        return real_send(sockfd, buf, len, flags);
+    }
+    return -1;
+}
+
+static ssize_t (*real_recv)(int, void*, size_t, int) = NULL;
+ssize_t recv(int sockfd, void* buf, size_t len, int flags) {
+    if (!real_recv) {
+        real_recv = dlsym(RTLD_NEXT, "recv");
+    }
+    lognet("recv", buf, len);
+    if (real_recv) {
+        return real_recv(sockfd, buf, len, flags);
+    }
+    return -1;
+}
+
+static ssize_t (*real_sendto)(int, const void*, size_t, int, const struct sockaddr*, socklen_t) = NULL;
+ssize_t sendto(int sockfd, const void* buf, size_t len, int flags, const struct sockaddr* dest_addr, socklen_t addrlen) {
+    if (!real_sendto) {
+        real_sendto = dlsym(RTLD_NEXT, "sendto");
+    }
+    lognet("sendto", (void*)dest_addr, len);
+    if (real_sendto) {
+        return real_sendto(sockfd, buf, len, flags, dest_addr, addrlen);
+    }
+    return -1;
+}
+
+static ssize_t (*real_recvfrom)(int, void* restrict, size_t, int, struct sockaddr* restrict, socklen_t* restrict) = NULL;
+ssize_t recvfrom(int sockfd, void* restrict buf, size_t len, int flags, struct sockaddr* restrict src_addr, socklen_t* restrict addrlen) {
+    if (!real_recvfrom) {
+        real_recvfrom = dlsym(RTLD_NEXT, "recvfrom");
+    }
+    lognet("recvfrom", src_addr, len);
+    if (real_recvfrom) {
+        return real_recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
+    }
+    return -1;
+}
+
+static struct hostent* (*real_gethostbyaddr)(const void*, socklen_t, int) = NULL;
+struct hostent* gethostbyaddr(const void* addr, socklen_t len, int type) {
+    if (!real_gethostbyaddr) {
+        real_gethostbyaddr = dlsym(RTLD_NEXT, "gethostbyaddr");
+    }
+    lognet("gethostbyaddr", (void*)addr, len);
+    if (real_gethostbyaddr) {
+        return real_gethostbyaddr(addr, len, type);
+    }
+    return NULL;
+}
+
+// --- The rest of the hooks remain the same ---
+
 static int (*real_WSAStartup)(uint16_t, void*) = NULL;
 int WSAStartup(uint16_t wVersionRequested, void* lpWSAData) {
     if (!real_WSAStartup) {
@@ -27,7 +196,6 @@ int WSAStartup(uint16_t wVersionRequested, void* lpWSAData) {
     return 0;
 }
 
-// --- WSACleanup ---
 static int (*real_WSACleanup)(void) = NULL;
 int WSACleanup(void) {
     if (!real_WSACleanup) {
@@ -40,7 +208,6 @@ int WSACleanup(void) {
     return 0;
 }
 
-// --- socket ---
 static int (*real_socket)(int, int, int) = NULL;
 int socket(int domain, int type, int protocol) {
     if (!real_socket) {
@@ -53,111 +220,6 @@ int socket(int domain, int type, int protocol) {
     return -1;
 }
 
-// --- connect ---
-static int (*real_connect)(int, const void*, int) = NULL;
-int connect(int sockfd, const void* addr, int addrlen) {
-    if (!real_connect) {
-        real_connect = dlsym(RTLD_NEXT, "connect");
-    }
-    lognet("connect", (void*)(uintptr_t)sockfd, addrlen);
-    if (real_connect) {
-        return real_connect(sockfd, addr, addrlen);
-    }
-    return -1;
-}
-
-// --- bind ---
-static int (*real_bind)(int, const void*, int) = NULL;
-int bind(int sockfd, const void* addr, int addrlen) {
-    if (!real_bind) {
-        real_bind = dlsym(RTLD_NEXT, "bind");
-    }
-    lognet("bind", (void*)(uintptr_t)sockfd, addrlen);
-    if (real_bind) {
-        return real_bind(sockfd, addr, addrlen);
-    }
-    return -1;
-}
-
-// --- listen ---
-static int (*real_listen)(int, int) = NULL;
-int listen(int sockfd, int backlog) {
-    if (!real_listen) {
-        real_listen = dlsym(RTLD_NEXT, "listen");
-    }
-    lognet("listen", (void*)(uintptr_t)sockfd, backlog);
-    if (real_listen) {
-        return real_listen(sockfd, backlog);
-    }
-    return -1;
-}
-
-// --- accept ---
-static int (*real_accept)(int, void*, int*) = NULL;
-int accept(int sockfd, void* addr, int* addrlen) {
-    if (!real_accept) {
-        real_accept = dlsym(RTLD_NEXT, "accept");
-    }
-    lognet("accept", (void*)(uintptr_t)sockfd, 0);
-    if (real_accept) {
-        return real_accept(sockfd, addr, addrlen);
-    }
-    return -1;
-}
-
-// --- send ---
-static int (*real_send)(int, const void*, int, int) = NULL;
-int send(int sockfd, const void* buf, int len, int flags) {
-    if (!real_send) {
-        real_send = dlsym(RTLD_NEXT, "send");
-    }
-    lognet("send", (void*)(uintptr_t)sockfd, len);
-    if (real_send) {
-        return real_send(sockfd, buf, len, flags);
-    }
-    return -1;
-}
-
-// --- recv ---
-static int (*real_recv)(int, void*, int, int) = NULL;
-int recv(int sockfd, void* buf, int len, int flags) {
-    if (!real_recv) {
-        real_recv = dlsym(RTLD_NEXT, "recv");
-    }
-    lognet("recv", (void*)(uintptr_t)sockfd, len);
-    if (real_recv) {
-        return real_recv(sockfd, buf, len, flags);
-    }
-    return -1;
-}
-
-// --- sendto ---
-static int (*real_sendto)(int, const void*, int, int, const void*, int) = NULL;
-int sendto(int sockfd, const void* buf, int len, int flags, const void* dest_addr, int addrlen) {
-    if (!real_sendto) {
-        real_sendto = dlsym(RTLD_NEXT, "sendto");
-    }
-    lognet("sendto", (void*)(uintptr_t)sockfd, len);
-    if (real_sendto) {
-        return real_sendto(sockfd, buf, len, flags, dest_addr, addrlen);
-    }
-    return -1;
-}
-
-// --- recvfrom ---
-static int (*real_recvfrom)(int, void*, int, int, void*, int*) = NULL;
-int recvfrom(int sockfd, void* buf, int len, int flags, void* src_addr, int* addrlen) {
-    if (!real_recvfrom) {
-        real_recvfrom = dlsym(RTLD_NEXT, "recvfrom");
-    }
-    lognet("recvfrom", (void*)(uintptr_t)sockfd, len);
-    if (real_recvfrom) {
-        return real_recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
-    }
-    return -1;
-}
-
-// --- closesocket ---
 static int (*real_closesocket)(int) = NULL;
 int closesocket(int sockfd) {
     if (!real_closesocket) {
@@ -170,35 +232,8 @@ int closesocket(int sockfd) {
     return -1;
 }
 
-// --- gethostbyname ---
-static void* (*real_gethostbyname)(const char*) = NULL;
-void* gethostbyname(const char* name) {
-    if (!real_gethostbyname) {
-        real_gethostbyname = dlsym(RTLD_NEXT, "gethostbyname");
-    }
-    lognet("gethostbyname", (void*)name, 0);
-    if (real_gethostbyname) {
-        return real_gethostbyname(name);
-    }
-    return NULL;
-}
-
-// --- gethostbyaddr ---
-static void* (*real_gethostbyaddr)(const void*, int, int) = NULL;
-void* gethostbyaddr(const void* addr, int len, int type) {
-    if (!real_gethostbyaddr) {
-        real_gethostbyaddr = dlsym(RTLD_NEXT, "gethostbyaddr");
-    }
-    lognet("gethostbyaddr", (void*)addr, len);
-    if (real_gethostbyaddr) {
-        return real_gethostbyaddr(addr, len, type);
-    }
-    return NULL;
-}
-
-// --- getaddrinfo ---
-static int (*real_getaddrinfo)(const char*, const char*, const void*, void**) = NULL;
-int getaddrinfo(const char* node, const char* service, const void* hints, void** res) {
+static int (*real_getaddrinfo)(const char* restrict, const char* restrict, const struct addrinfo* restrict, struct addrinfo** restrict) = NULL;
+int getaddrinfo(const char* restrict node, const char* restrict service, const struct addrinfo* restrict hints, struct addrinfo** restrict res) {
     if (!real_getaddrinfo) {
         real_getaddrinfo = dlsym(RTLD_NEXT, "getaddrinfo");
     }
@@ -209,7 +244,6 @@ int getaddrinfo(const char* node, const char* service, const void* hints, void**
     return -1;
 }
 
-// --- InternetOpenW ---
 static void* (*real_InternetOpenW)(const wchar_t*, uint32_t, const wchar_t*, const wchar_t*, uint32_t) = NULL;
 void* InternetOpenW(const wchar_t* lpszAgent, uint32_t dwAccessType, const wchar_t* lpszProxy, const wchar_t* lpszProxyBypass, uint32_t dwFlags) {
     if (!real_InternetOpenW) {
@@ -222,7 +256,6 @@ void* InternetOpenW(const wchar_t* lpszAgent, uint32_t dwAccessType, const wchar
     return NULL;
 }
 
-// --- InternetConnectW ---
 static void* (*real_InternetConnectW)(void*, const wchar_t*, uint16_t, const wchar_t*, const wchar_t*, uint32_t, uint32_t, uintptr_t) = NULL;
 void* InternetConnectW(void* hInternet, const wchar_t* lpszServerName, uint16_t nServerPort, const wchar_t* lpszUserName, const wchar_t* lpszPassword, uint32_t dwService, uint32_t dwFlags, uintptr_t dwContext) {
     if (!real_InternetConnectW) {
@@ -235,7 +268,6 @@ void* InternetConnectW(void* hInternet, const wchar_t* lpszServerName, uint16_t 
     return NULL;
 }
 
-// --- HttpOpenRequestW ---
 static void* (*real_HttpOpenRequestW)(void*, const wchar_t*, const wchar_t*, const wchar_t*, const wchar_t*, const wchar_t**, uint32_t, uintptr_t) = NULL;
 void* HttpOpenRequestW(void* hConnect, const wchar_t* lpszVerb, const wchar_t* lpszObjectName, const wchar_t* lpszVersion, const wchar_t* lpszReferrer, const wchar_t** lplpszAcceptTypes, uint32_t dwFlags, uintptr_t dwContext) {
     if (!real_HttpOpenRequestW) {
@@ -248,7 +280,6 @@ void* HttpOpenRequestW(void* hConnect, const wchar_t* lpszVerb, const wchar_t* l
     return NULL;
 }
 
-// --- HttpSendRequestW ---
 static int (*real_HttpSendRequestW)(void*, const wchar_t*, uint32_t, void*, uint32_t) = NULL;
 int HttpSendRequestW(void* hRequest, const wchar_t* lpszHeaders, uint32_t dwHeadersLength, void* lpOptional, uint32_t dwOptionalLength) {
     if (!real_HttpSendRequestW) {
@@ -261,7 +292,6 @@ int HttpSendRequestW(void* hRequest, const wchar_t* lpszHeaders, uint32_t dwHead
     return 0;
 }
 
-// --- InternetReadFile ---
 static int (*real_InternetReadFile)(void*, void*, uint32_t, uint32_t*) = NULL;
 int InternetReadFile(void* hFile, void* lpBuffer, uint32_t dwNumberOfBytesToRead, uint32_t* lpdwNumberOfBytesRead) {
     if (!real_InternetReadFile) {
@@ -273,3 +303,4 @@ int InternetReadFile(void* hFile, void* lpBuffer, uint32_t dwNumberOfBytesToRead
     }
     return 0;
 }
+

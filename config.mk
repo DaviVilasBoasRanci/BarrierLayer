@@ -5,7 +5,7 @@
 DEFAULT_LAUNCHER = auto
 
 # Build Mode
-BUILD_MODE = release
+BUILD_MODE = relwithdebinfo
 
 # Build Features
 BUILD_KERNEL = N

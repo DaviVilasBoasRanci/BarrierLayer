@@ -22,36 +22,33 @@ static char* hook_library = NULL;
 
 // Função para mostrar ajuda
 void show_help(const char* program_name) {
-    printf("BarrierLayer v%s - Advanced Anti-Cheat Bypass for Linux Gaming\n\n", VERSION);
+    printf("BarrierLayer v%s - Advanced Anti-Cheat Bypass and Project Manager\n\n", VERSION);
     
-    printf("Usage: %s [OPTIONS] [EXECUTABLE] [ARGS...]\n\n", program_name);
+    printf("Usage: %s [COMMAND] or [OPTIONS] [EXECUTABLE] [ARGS...]\n\n", program_name);
     
-    printf("Options:\n");
-    printf("  -h, --help              Show this help message\n");
-    printf("  -v, --verbose           Enable verbose output\n");
-    printf("  -d, --daemon            Run in daemon mode\n");
-    printf("  -l, --library PATH      Specify hook library path\n");
-    printf("  -c, --config            Show configuration\n");
-    printf("  -t, --test              Run self-test\n");
-    printf("  -i, --info              Show system information\n");
+    printf("Commands:\n");
+    printf("  --build                 Compile the project (runs 'make all')\n");
+    printf("  --configure             Run interactive configuration (runs 'make config')\n");
+    printf("  --clean                 Clean build files (runs 'make clean')\n");
+    printf("  --test                  Run self-test\n");
+    printf("  --info                  Show system information\n");
+    printf("  --config                Show current configuration\n");
     printf("  --version               Show version information\n");
+    printf("  --help                  Show this help message\n");
     printf("\n");
-    
-    printf("Environment Variables:\n");
-    printf("  BARRIERLAYER_LOG_LEVEL     Log level (0-4, default: 2)\n");
-    printf("  BARRIERLAYER_DETAILED      Detailed logging (0/1, default: 1)\n");
-    printf("  BARRIERLAYER_STACK_TRACE   Stack traces (0/1, default: 1)\n");
-    printf("  BARRIERLAYER_STEALTH_MODE  Stealth mode (0/1, default: 1)\n");
+
+    printf("Launch Options:\n");
+    printf("  -v, --verbose           Enable verbose output for launching\n");
+    printf("  -d, --daemon            Run in daemon mode (monitoring)\n");
+    printf("  -l, --library PATH      Specify hook library path for launching\n");
     printf("\n");
     
     printf("Examples:\n");
-    printf("  %s game.exe                    # Launch with auto-detection\n", program_name);
-    printf("  %s -v game.exe                 # Launch with verbose output\n", program_name);
-    printf("  %s -d                          # Run as daemon\n", program_name);
-    printf("  %s -t                          # Run self-test\n", program_name);
+    printf("  %s --build\n", program_name);
+    printf("  %s --configure\n", program_name);
+    printf("  %s game.exe              # Launch with auto-detection\n", program_name);
+    printf("  %s -v game.exe           # Launch with verbose output\n", program_name);
     printf("\n");
-    
-    printf("For interactive launcher, use: ./barrierlayer-launcher.sh\n");
 }
 
 // Função para mostrar versão
@@ -136,21 +133,21 @@ void show_info(void) {
     printf("BarrierLayer System Information:\n\n");
     
     // Informações do sistema
-    system("echo 'System:' && lsb_release -a 2>/dev/null || uname -a");
+    (void)system("echo 'System:' && lsb_release -a 2>/dev/null || uname -a");
     printf("\n");
     
     // Informações de hardware
     printf("Hardware:\n");
-    system("echo '  CPU:' && grep 'model name' /proc/cpuinfo | head -1 | cut -d':' -f2 | sed 's/^ *//'");
-    system("echo '  Memory:' && free -h | grep '^Mem:' | awk '{print $2 \" total, \" $3 \" used, \" $7 \" available\"}'");
+    (void)system("echo '  CPU:' && grep 'model name' /proc/cpuinfo | head -1 | cut -d':' -f2 | sed 's/^ *//'");
+    (void)system("echo '  Memory:' && free -h | grep '^Mem:' | awk '{print $2 \" total, \" $3 \" used, \" $7 \" available\"}'");
     printf("\n");
     
     // Verificar dependências
     printf("Dependencies:\n");
-    system("echo -n '  gcc: ' && (gcc --version | head -1 || echo 'Not found')");
-    system("echo -n '  nasm: ' && (nasm --version | head -1 || echo 'Not found')");
-    system("echo -n '  Wine: ' && (wine --version 2>/dev/null || echo 'Not found')");
-    system("echo -n '  Steam: ' && (steam --version 2>/dev/null | head -1 || echo 'Not found')");
+    (void)system("echo -n '  gcc: ' && (gcc --version | head -1 || echo 'Not found')");
+    (void)system("echo -n '  nasm: ' && (nasm --version | head -1 || echo 'Not found')");
+    (void)system("echo -n '  Wine: ' && (wine --version 2>/dev/null || echo 'Not found')");
+    (void)system("echo -n '  Steam: ' && (steam --version 2>/dev/null | head -1 || echo 'Not found')");
     printf("\n");
     
     // Status dos arquivos
@@ -250,7 +247,7 @@ int launch_with_hooks(const char* executable, char* const argv[]) {
     // Verificar se biblioteca existe
     if (access(hook_library, F_OK) != 0) {
         fprintf(stderr, "Error: Hook library not found: %s\n", hook_library);
-        fprintf(stderr, "Please run 'make' to build BarrierLayer first.\n");
+        fprintf(stderr, "Please run 'make' or '%s --build' to build BarrierLayer first.\n", argv[0]);
         return 1;
     }
     
@@ -259,9 +256,16 @@ int launch_with_hooks(const char* executable, char* const argv[]) {
     char* new_preload;
     
     if (current_preload) {
-        asprintf(&new_preload, "%s:%s", hook_library, current_preload);
+        if (asprintf(&new_preload, "%s:%s", hook_library, current_preload) == -1) {
+            perror("Failed to allocate memory for LD_PRELOAD");
+            return 1;
+        }
     } else {
         new_preload = strdup(hook_library);
+        if (!new_preload) {
+            perror("Failed to allocate memory for LD_PRELOAD");
+            return 1;
+        }
     }
     
     setenv("LD_PRELOAD", new_preload, 1);
@@ -291,6 +295,7 @@ int launch_with_hooks(const char* executable, char* const argv[]) {
     free(new_preload);
     return 1;
 }
+
 
 // Função para modo daemon
 int daemon_mode_main(void) {
@@ -322,11 +327,7 @@ int daemon_mode_main(void) {
 // Função principal
 int main(int argc, char* argv[]) {
     int opt;
-    int show_help_flag = 0;
-    int show_version_flag = 0;
-    int show_config_flag = 0;
-    int show_info_flag = 0;
-    int run_test_flag = 0;
+    int command_executed = 0;
     
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
@@ -337,6 +338,9 @@ int main(int argc, char* argv[]) {
         {"test", no_argument, 0, 't'},
         {"info", no_argument, 0, 'i'},
         {"version", no_argument, 0, 0},
+        {"build", no_argument, 0, 0},
+        {"configure", no_argument, 0, 0},
+        {"clean", no_argument, 0, 0},
         {0, 0, 0, 0}
     };
     
@@ -344,29 +348,48 @@ int main(int argc, char* argv[]) {
     while ((opt = getopt_long(argc, argv, "hvdl:cti", long_options, NULL)) != -1) {
         switch (opt) {
             case 'h':
-                show_help_flag = 1;
+                show_help(argv[0]);
+                command_executed = 1;
                 break;
             case 'v':
                 verbose = 1;
                 break;
             case 'd':
                 daemon_mode = 1;
+                command_executed = 1;
                 break;
             case 'l':
                 hook_library = strdup(optarg);
                 break;
             case 'c':
-                show_config_flag = 1;
+                show_config();
+                command_executed = 1;
                 break;
             case 't':
-                run_test_flag = 1;
-                break;
+                return run_self_test();
             case 'i':
-                show_info_flag = 1;
+                show_info();
+                command_executed = 1;
                 break;
             case 0:
                 if (strcmp(long_options[optind-1].name, "version") == 0) {
-                    show_version_flag = 1;
+                    show_version();
+                    command_executed = 1;
+                }
+                if (strcmp(long_options[optind-1].name, "build") == 0) {
+                    printf("Building project...\n");
+                    (void)system("make all");
+                    command_executed = 1;
+                }
+                if (strcmp(long_options[optind-1].name, "configure") == 0) {
+                    printf("Running configuration...\n");
+                    (void)system("make config");
+                    command_executed = 1;
+                }
+                if (strcmp(long_options[optind-1].name, "clean") == 0) {
+                    printf("Cleaning project...\n");
+                    (void)system("make clean");
+                    command_executed = 1;
                 }
                 break;
             default:
@@ -375,34 +398,8 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    // Processar flags
-    if (show_help_flag) {
-        show_help(argv[0]);
-        return 0;
-    }
-    
-    if (show_version_flag) {
-        show_version();
-        return 0;
-    }
-    
-    if (show_config_flag) {
-        show_config();
-        return 0;
-    }
-    
-    if (show_info_flag) {
-        show_info();
-        return 0;
-    }
-    
-    if (run_test_flag) {
-        return run_self_test();
-    }
-    
-    if (daemon_mode) {
-        return daemon_mode_main();
-    }
+    // Se um comando foi executado, saia
+    if(command_executed) return 0;
     
     // Se não há executável especificado, mostrar ajuda
     if (optind >= argc) {
