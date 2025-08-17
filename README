@@ -81,6 +81,40 @@ Once installed, you can launch games with BarrierLayer using the provided aliase
     ENABLE_BARRIERLAYER=1 /full/path/to/BarrierLayer/scripts/run_with_barrierlayer.sh %command%
     ```
 
+## ⚠️ Important Considerations & Risks
+
+### Potential for Account Bans
+Using BarrierLayer to bypass anti-cheat mechanisms, especially in online multiplayer games, carries an inherent risk of account suspension or permanent bans from game publishers. While BarrierLayer aims for stealth and compatibility, anti-cheat systems are constantly evolving. **Use at your own risk and consider testing on secondary accounts.**
+
+## 🎮 Game-Specific Workarounds & Notes
+
+### Fortnite (via Epic Games Launcher on Wine/Proton)
+Fortnite's anti-cheat (EAC) intentionally blocks the game from running on Linux, even under Wine/Proton. While BarrierLayer aims to provide a workaround, full online functionality may be limited or result in bans.
+*   **Current Status (as of 2025):** Fortnite technically runs on Proton, but EAC prevents online play.
+*   **Recommendations:**
+    *   Use a recent Proton-GE version (e.g., `make install-proton`).
+    *   Ensure network hooks (if enabled/developed) are configured to mask Linux-specific user-agents or headers.
+    *   Test in offline/single-player modes first.
+    *   **Warning:** Attempting to play online may lead to account bans.
+
+## 🚀 Performance Optimization Notes
+
+BarrierLayer introduces a layer of interception, which can add overhead.
+*   **Reducing Latency:**
+    *   Disable unnecessary hooks via `make configs`. For example, if a game doesn't interact with the registry, disable registry hooks.
+    *   Future versions may include asynchronous logging or caching mechanisms to further reduce overhead.
+*   **GPU & Drivers:** Ensure you are using optimized drivers for your hardware.
+    *   **AMD/Intel:** Mesa drivers (e.g., Mesa 25.x or newer).
+    *   **NVIDIA:** Proprietary drivers (e.g., NVIDIA 560+).
+*   **Kernel Tweaks:** (Advanced Users) Consider kernel parameters for low-latency scheduling or huge pages for memory optimization. These options will be configurable in future kernel module versions.
+
+## 🔒 Security & Stability Considerations
+
+Kernel modules, by their nature, operate at a highly privileged level and can impact system stability.
+*   **Automatic Unload on Error:** Future versions of the kernel module will aim to automatically unload themselves in case of critical errors to prevent kernel panics.
+*   **SELinux/AppArmor:** Be aware that security frameworks like SELinux or AppArmor might interfere with BarrierLayer's operation. You may need to configure exceptions.
+*   **Rootkit-like Features:** While some features might resemble rootkits (e.g., process hiding), BarrierLayer is designed for legitimate gaming compatibility. We aim to avoid features that could be misinterpreted as malicious.
+
 ## 🤝 Contributing
 
 We welcome contributions from the community! Whether it's bug reports, feature suggestions, or code contributions, your help is invaluable. Please refer to our [CONTRIBUTING.md](CONTRIBUTING.md) (coming soon) for guidelines.

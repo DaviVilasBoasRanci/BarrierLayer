@@ -9,128 +9,175 @@
 #include <stdint.h>
 #include <dlfcn.h>
 #include <sys/stat.h>
+#include <limits.h>
 #include "../include/logger.h"
 #include "../include/ultra_logger.h"
 #include "../include/performance.h"
+#include "../include/file_hooks.h"
 
-// Definições do Windows para compatibilidade
+#define MAX_RULES 100
+#define MAX_LINE_LEN 256
+
+// Windows type definitions for compatibility
 typedef void* HANDLE;
 typedef const wchar_t* LPCWSTR;
 typedef unsigned long DWORD;
-typedef void* LPSECURITY_ATTRIBUTES;
-#define WINAPI
 #define INVALID_HANDLE_VALUE ((HANDLE)(intptr_t)-1)
-#define GENERIC_READ 0x80000000
-#define GENERIC_WRITE 0x40000000
-#define CREATE_ALWAYS 2
-#define CREATE_NEW 1
 #define ERROR_FILE_NOT_FOUND 2
+#define INVALID_FILE_ATTRIBUTES ((DWORD)-1)
 
-// Função mock para SetLastError
+// --- Configuration ---
+static char config_path[PATH_MAX];
+static char* hidden_paths[MAX_RULES];
+static int num_hidden_paths = 0;
+
+// --- Helper Functions ---
+
+// Mock for SetLastError to map to errno
 void SetLastError(DWORD error) { errno = error; }
-DWORD GetLastError(void) { return errno; }
 
-// A definição de LOG_PATH foi movida para o ultra_logger para ser dinâmica.
+// Checks if a given path should be hidden based on config
+static int is_path_hidden(const char* path) {
+    if (!path) return 0;
+    fprintf(stderr, "[DEBUG] is_path_hidden: Checking path: %s\n", path); fflush(stderr);
+    for (int i = 0; i < num_hidden_paths; i++) {
+        if (strstr(path, hidden_paths[i])) {
+            fprintf(stderr, "[DEBUG] is_path_hidden: Path '%s' matched rule '%s'. HIDING.\n", path, hidden_paths[i]); fflush(stderr);
+            return 1;
+        }
+    }
+    return 0;
+}
 
-// Ponteiro para função original
-static void* (*real_CreateFileW)(const wchar_t*, unsigned long, unsigned long, void*, unsigned long, unsigned long, void*) = NULL;
+// Load hidden paths from config file
+static void load_file_hook_config(const char* path) {
+    fprintf(stderr, "[DEBUG] load_file_hook_config: Attempting to open config: %s\n", path); fflush(stderr);
+    FILE* file = fopen(path, "r");
+    if (!file) {
+        fprintf(stderr, "[DEBUG] load_file_hook_config: FAILED to open config file.\n"); fflush(stderr);
+        ULTRA_WARN("FILE_HOOKS", "File hook config not found at %s, skipping.", path);
+        return;
+    }
+    fprintf(stderr, "[DEBUG] load_file_hook_config: Config file opened successfully.\n"); fflush(stderr);
 
-// Hook para CreateFileW com logging ultra-detalhado
-void* CreateFileW(const wchar_t* lpFileName, unsigned long dwDesiredAccess, unsigned long dwShareMode, 
-                  void* lpSecurityAttributes, unsigned long dwCreationDisposition, 
-                  unsigned long dwFlagsAndAttributes, void* hTemplateFile) {
-    
-    // Inicializar função original se necessário
+    char line[MAX_LINE_LEN];
+    while (fgets(line, sizeof(line), file)) {
+        if (line[0] == '#' || line[0] == '\n') continue;
+        line[strcspn(line, "\n")] = 0;
+
+        char* command = strtok(line, " \t");
+        if (!command) continue;
+
+        if (strcmp(command, "hide_path") == 0) {
+            char* path_to_hide = strtok(NULL, "");
+            if (path_to_hide && num_hidden_paths < MAX_RULES) {
+                // Skip leading whitespace
+                while (*path_to_hide == ' ' || *path_to_hide == '\t') path_to_hide++;
+                hidden_paths[num_hidden_paths++] = strdup(path_to_hide);
+                fprintf(stderr, "[DEBUG] load_file_hook_config: Loaded rule: hide_path %s\n", path_to_hide); fflush(stderr);
+            }
+        }
+    }
+    fclose(file);
+    fprintf(stderr, "[DEBUG] load_file_hook_config: Total rules loaded: %d\n", num_hidden_paths); fflush(stderr);
+    ULTRA_INFO("FILE_HOOKS", "Loaded %d file hiding rules.", num_hidden_paths);
+}
+
+// --- Hooked Functions ---
+
+// CreateFileW (Windows API)
+static HANDLE (*real_CreateFileW)(LPCWSTR, DWORD, DWORD, void*, DWORD, DWORD, HANDLE) = NULL;
+HANDLE CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, void* lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
     if (!real_CreateFileW) {
         real_CreateFileW = dlsym(RTLD_NEXT, "CreateFileW");
     }
-    
-    // Log detalhado da chamada
+
     char filename_utf8[1024] = {0};
     if (lpFileName) {
         wcstombs(filename_utf8, lpFileName, sizeof(filename_utf8) - 1);
     }
-    
-    ULTRA_TRACE("FILE", "CreateFileW called: file='%s' access=0x%lx share=0x%lx disp=0x%lx flags=0x%lx",
-                filename_utf8, dwDesiredAccess, dwShareMode, dwCreationDisposition, dwFlagsAndAttributes);
-    
-    // Verificar se é tentativa de acesso a arquivos sensíveis (apenas no modo SECURITY)
-    if (get_performance_profile() == PROFILE_SECURITY && lpFileName) {
-        const wchar_t *sensitive_files[] = {
-            L"barrierlayer", L"hook", L"inject", L"cheat", L"bypass", 
-            L"wine", L"proton", L"ld_preload", NULL
-        };
-        
-        for (int i = 0; sensitive_files[i]; i++) {
-            if (wcsstr(lpFileName, sensitive_files[i])) {
-                ULTRA_WARN("FILE", "Sensitive file access attempt blocked: %s", filename_utf8);
-                SetLastError(ERROR_FILE_NOT_FOUND);
-                return INVALID_HANDLE_VALUE;
-            }
-        }
+
+    if (get_performance_profile() == PROFILE_SECURITY && is_path_hidden(filename_utf8)) {
+        ULTRA_WARN("FILE", "Blocked access to hidden path (CreateFileW): %s", filename_utf8);
+        SetLastError(ERROR_FILE_NOT_FOUND);
+        return INVALID_HANDLE_VALUE;
     }
-    
-    // Chamar função original ou simular comportamento
-    void* result = INVALID_HANDLE_VALUE;
-    
-    if (real_CreateFileW) {
-        result = real_CreateFileW(lpFileName, dwDesiredAccess, dwShareMode, 
-                                 lpSecurityAttributes, dwCreationDisposition, 
-                                 dwFlagsAndAttributes, hTemplateFile);
-    } else {
-        // Simular comportamento do Windows no Linux
-        if (lpFileName) {
-            // Converter caminho Windows para Linux
-            char linux_path[1024];
-            snprintf(linux_path, sizeof(linux_path), "/tmp/wine_files/%s", filename_utf8);
-            
-            // Criar diretório se não existir
-            mkdir("/tmp/wine_files", 0755);
-            
-            // Mapear flags do Windows para Linux
-            int linux_flags = O_RDONLY;
-            if (dwDesiredAccess & GENERIC_WRITE) linux_flags = O_WRONLY;
-            if (dwDesiredAccess & (GENERIC_READ | GENERIC_WRITE)) linux_flags = O_RDWR;
-            if (dwCreationDisposition == CREATE_ALWAYS) linux_flags |= O_CREAT | O_TRUNC;
-            if (dwCreationDisposition == CREATE_NEW) linux_flags |= O_CREAT | O_EXCL;
-            
-            int fd = open(linux_path, linux_flags, 0644);
-            if (fd >= 0) {
-                result = (void*)(intptr_t)fd;
-            }
-        }
-    }
-    
-    ULTRA_TRACE("FILE", "CreateFileW result: handle=%p error=%lu", result, GetLastError());
-    
-    // Log syscall equivalente
-    unsigned long args[6] = {
-        (unsigned long)lpFileName, dwDesiredAccess, dwShareMode,
-        (unsigned long)lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes
-    };
-    LOG_SYSCALL("CreateFileW", 0, args, (long)result, filename_utf8);
-    
-    return result;
+
+    ULTRA_TRACE("FILE", "CreateFileW called: file='%s'", filename_utf8);
+    return real_CreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
 }
 
-// Função construtora, chamada quando a biblioteca é carregada
+// GetFileAttributesW (Windows API)
+static DWORD (*real_GetFileAttributesW)(LPCWSTR) = NULL;
+DWORD GetFileAttributesW(LPCWSTR lpFileName) {
+    if (!real_GetFileAttributesW) {
+        real_GetFileAttributesW = dlsym(RTLD_NEXT, "GetFileAttributesW");
+    }
+
+    char filename_utf8[1024] = {0};
+    if (lpFileName) {
+        wcstombs(filename_utf8, lpFileName, sizeof(filename_utf8) - 1);
+    }
+
+    if (get_performance_profile() == PROFILE_SECURITY && is_path_hidden(filename_utf8)) {
+        ULTRA_WARN("FILE", "Blocked access to hidden path (GetFileAttributesW): %s", filename_utf8);
+        return INVALID_FILE_ATTRIBUTES;
+    }
+
+    return real_GetFileAttributesW(lpFileName);
+}
+
+// fopen (Standard C Library)
+static FILE* (*real_fopen)(const char*, const char*) = NULL;
+FILE* fopen(const char* pathname, const char* mode) {
+    if (!real_fopen) {
+        real_fopen = dlsym(RTLD_NEXT, "fopen");
+    }
+
+    if (get_performance_profile() == PROFILE_SECURITY && is_path_hidden(pathname)) {
+        ULTRA_WARN("FILE", "Blocked access to hidden path (fopen): %s", pathname);
+        errno = ENOENT;
+        return NULL;
+    }
+
+    return real_fopen(pathname, mode);
+}
+
+// access (POSIX)
+static int (*real_access)(const char*, int) = NULL;
+int access(const char* pathname, int mode) {
+    fprintf(stderr, "[DEBUG] access() hook called for path: %s\n", pathname); fflush(stderr);
+    if (!real_access) {
+        real_access = dlsym(RTLD_NEXT, "access");
+    }
+
+    if (get_performance_profile() == PROFILE_SECURITY && is_path_hidden(pathname)) {
+        ULTRA_WARN("FILE", "Blocked access to hidden path (access): %s", pathname);
+        errno = ENOENT;
+        return -1;
+    }
+
+    return real_access(pathname, mode);
+}
+
+
+// --- Initialization ---
+
 __attribute__((constructor))
 void file_hooks_init() {
-    // Inicializar ultra logger
     if (ultra_logger_init() == 0) {
         ULTRA_INFO("INIT", "File hooks initialized with ultra logging");
     }
-    
-    // Stealth: remover LD_PRELOAD
-    unsetenv("LD_PRELOAD");
-    
-    // Unlinking do loader: técnica avançada de stealth
-    void* handle = dlopen(NULL, RTLD_NOW);
-    if (handle) {
-        // Tentar mascarar a presença da biblioteca
-        // Método mais seguro sem acessar estruturas internas
-        dlclose(handle);
+
+    const char* home_dir = getenv("HOME");
+    if (home_dir) {
+        snprintf(config_path, sizeof(config_path), "%s/BarrierLayer/files.conf", home_dir);
+    } else {
+        snprintf(config_path, sizeof(config_path), "./files.conf");
     }
-    
-    ULTRA_INFO("STEALTH", "File hooks stealth mode activated");
+    load_file_hook_config(config_path);
+
+    // Stealth techniques
+    // unsetenv("LD_PRELOAD"); // Comentado para depuração
+    ULTRA_INFO("STEALTH", "File hooks stealth mode DEACTIVATED for debugging");
 }

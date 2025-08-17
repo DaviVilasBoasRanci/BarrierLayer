@@ -8,7 +8,7 @@ DEFAULT_LAUNCHER = auto
 BUILD_MODE = relwithdebinfo
 
 # Build Features
-BUILD_KERNEL = N
+BUILD_KERNEL = Y
 BUILD_GUI = Y
 ENABLE_ULTRA_LOGGING = Y
 

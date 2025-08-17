@@ -11,25 +11,31 @@
 #include <signal.h>
 #include <dlfcn.h>
 #include <linux/limits.h>
+#include <sched.h>
+#include <sys/mount.h>
+#include <libgen.h> // Para basename
 
 #define KERNEL_MODULE_PATH "/dev/sysinfo"
 #define KERNEL_MODULE_NAME "barrierlayer_kernel_advanced"
+#define FAKE_ROOT_PATH "/tmp/barrier_root"
 #define MAX_ARGS 256
 #define MAX_ENV_VARS 256
 
-// Comandos para comunicação com o módulo do kernel
-#define STEALTH_IOCTL_MAGIC 'S'
-#define STEALTH_HIDE_PID    _IOW(STEALTH_IOCTL_MAGIC, 1, pid_t)
-#define STEALTH_UNHIDE_PID  _IOW(STEALTH_IOCTL_MAGIC, 2, pid_t)
-#define STEALTH_SET_MODE    _IOW(STEALTH_IOCTL_MAGIC, 3, int)
-#define STEALTH_GET_STATUS  _IOR(STEALTH_IOCTL_MAGIC, 4, struct stealth_status)
+extern char** environ;
 
+// ... (structs e defines do IOCTL permanecem os mesmos) ...
 struct stealth_status {
     int stealth_mode;
     int anti_debug;
     int hidden_processes;
     int active_hooks;
 };
+
+#define STEALTH_IOCTL_MAGIC 'S'
+#define STEALTH_HIDE_PID    _IOW(STEALTH_IOCTL_MAGIC, 1, pid_t)
+#define STEALTH_UNHIDE_PID  _IOW(STEALTH_IOCTL_MAGIC, 2, pid_t)
+#define STEALTH_SET_MODE    _IOW(STEALTH_IOCTL_MAGIC, 3, int)
+#define STEALTH_GET_STATUS  _IOR(STEALTH_IOCTL_MAGIC, 4, struct stealth_status)
 
 // Configurações do launcher
 struct launcher_config {
@@ -38,182 +44,54 @@ struct launcher_config {
     int anti_debug;
     int kernel_mode;
     int verbose;
+    int enable_sandbox;
     char *target_executable;
+    char *sandboxed_executable_path; // Novo campo para o caminho dentro da sandbox
     char *working_directory;
     char **target_args;
     char **environment;
 };
 
-// Função para verificar se o módulo do kernel está carregado
+static int setup_filesystem_sandbox(struct launcher_config *config);
+static int copy_file(const char* src, const char* dest);
+
+// ... (check_kernel_module, load_kernel_module, communicate_with_kernel permanecem os mesmos) ...
 static int check_kernel_module(void) {
     FILE *modules;
     char line[256];
     int found = 0;
-    
     modules = fopen("/proc/modules", "r");
-    if (!modules) {
-        return 0;
-    }
-    
+    if (!modules) return 0;
     while (fgets(line, sizeof(line), modules)) {
         if (strstr(line, KERNEL_MODULE_NAME)) {
             found = 1;
             break;
         }
     }
-    
     fclose(modules);
     return found;
 }
 
-// Função para carregar o módulo do kernel
 static int load_kernel_module(int verbose) {
     char command[512];
     int ret;
-    
-    if (verbose) {
-        printf("Carregando módulo do kernel avançado...\n");
-    }
-    
-    snprintf(command, sizeof(command), "insmod /lib/modules/$(uname -r)/extra/%s.ko", KERNEL_MODULE_NAME);
+    if (verbose) printf("Carregando módulo do kernel avançado...\n");
+    snprintf(command, sizeof(command), "sudo insmod /lib/modules/$(uname -r)/extra/%s.ko", KERNEL_MODULE_NAME);
     ret = system(command);
-    
     if (ret != 0) {
-        if (verbose) {
-            printf("Tentando carregar do diretório local...\n");
-        }
-        snprintf(command, sizeof(command), "insmod ./kernel/%s.ko", KERNEL_MODULE_NAME);
+        if (verbose) printf("Tentando carregar do diretório local...\n");
+        snprintf(command, sizeof(command), "sudo insmod ./kernel/%s.ko", KERNEL_MODULE_NAME);
         ret = system(command);
     }
-    
     return ret;
 }
 
-// Função para comunicar com o módulo do kernel
 static int communicate_with_kernel(int cmd, void *data) {
-    int fd;
-    int ret;
-    
-    fd = open(KERNEL_MODULE_PATH, O_RDWR);
-    if (fd < 0) {
-        return -1;
-    }
-    
-    ret = ioctl(fd, cmd, data);
+    int fd = open(KERNEL_MODULE_PATH, O_RDWR);
+    if (fd < 0) return -1;
+    int ret = ioctl(fd, cmd, data);
     close(fd);
-    
     return ret;
-}
-
-// Função para limpar variáveis de ambiente sensíveis
-static void clean_environment(char **envp) {
-    // Explicitly unset LD_PRELOAD to prevent interference
-    unsetenv("LD_PRELOAD");
-
-    int i;
-    const char *sensitive_vars[] = {
-        "LD_PRELOAD", // Keep in list for other potential handling, though unsetenv is primary for this
-        "LD_LIBRARY_PATH",
-        "BARRIERLAYER_",
-        "HOOK_",
-        "INJECT_",
-        "CHEAT_",
-        "BYPASS_",
-        NULL
-    };
-    
-    for (i = 0; envp[i]; i++) {
-        int j;
-        for (j = 0; sensitive_vars[j]; j++) {
-            if (strncmp(envp[i], sensitive_vars[j], strlen(sensitive_vars[j])) == 0) {
-                // Substituir por variável inócua
-                char *equals = strchr(envp[i], '=');
-                if (equals) {
-                    snprintf(envp[i], equals - envp[i] + 1, "SYSTEM_INFO");
-                    strcpy(equals + 1, "enabled");
-                }
-                break;
-            }
-        }
-    }
-}
-
-// Função para mascarar argumentos da linha de comando
-static void mask_arguments(int argc, char **argv) {
-    int i;
-    const char *sensitive_patterns[] = {
-        "barrierlayer",
-        "hook",
-        "inject",
-        "cheat",
-        "bypass",
-        NULL
-    };
-    
-    for (i = 0; i < argc; i++) {
-        int j;
-        for (j = 0; sensitive_patterns[j]; j++) {
-            char *pos = strstr(argv[i], sensitive_patterns[j]);
-            if (pos) {
-                // Substituir por string genérica
-                memset(pos, 'x', strlen(sensitive_patterns[j]));
-            }
-        }
-    }
-}
-
-// Função para configurar modo furtivo
-static int setup_stealth_mode(struct launcher_config *config) {
-    struct stealth_status status;
-    int stealth_flags = 0;
-    
-    if (config->verbose) {
-        printf("Configurando modo furtivo...\n");
-    }
-    
-    // Ativar modo furtivo no kernel
-    if (config->stealth_mode) {
-        stealth_flags |= 1;
-    }
-    if (config->anti_debug) {
-        stealth_flags |= 2;
-    }
-    
-    if (communicate_with_kernel(STEALTH_SET_MODE, &stealth_flags) != 0) {
-        if (config->verbose) {
-            printf("Aviso: Não foi possível comunicar com o módulo do kernel\n");
-        }
-        return -1;
-    }
-    
-    // Verificar status
-    if (communicate_with_kernel(STEALTH_GET_STATUS, &status) == 0) {
-        if (config->verbose) {
-            printf("Status do módulo:\n");
-            printf("  Modo furtivo: %s\n", status.stealth_mode ? "ativo" : "inativo");
-            printf("  Anti-debug: %s\n", status.anti_debug ? "ativo" : "inativo");
-            printf("  Processos ocultos: %d\n", status.hidden_processes);
-            printf("  Hooks ativos: %d\n", status.active_hooks);
-        }
-    }
-    
-    return 0;
-}
-
-// Função para ocultar processo no kernel
-static int hide_process_in_kernel(pid_t pid, int verbose) {
-    if (communicate_with_kernel(STEALTH_HIDE_PID, &pid) != 0) {
-        if (verbose) {
-            printf("Aviso: Não foi possível ocultar processo %d no kernel\n", pid);
-        }
-        return -1;
-    }
-    
-    if (verbose) {
-        printf("Processo %d ocultado no kernel\n", pid);
-    }
-    
-    return 0;
 }
 
 // Função para executar o programa alvo
@@ -232,9 +110,15 @@ static int execute_target(struct launcher_config *config) {
     }
     
     if (child_pid == 0) {
-        // Processo filho
+        // --- PROCESSO FILHO ---
+
+        if (config->enable_sandbox) {
+            if (setup_filesystem_sandbox(config) != 0) {
+                fprintf(stderr, "Erro fatal ao configurar a sandbox. Abortando.\n");
+                exit(1);
+            }
+        }
         
-        // Mudar diretório de trabalho se especificado
         if (config->working_directory) {
             if (chdir(config->working_directory) != 0) {
                 perror("chdir");
@@ -242,31 +126,26 @@ static int execute_target(struct launcher_config *config) {
             }
         }
         
-        // Limpar ambiente
-        clean_environment(config->environment);
-        
-        // Mascarar argumentos
-        int argc = 0;
-        while (config->target_args[argc]) argc++;
-        mask_arguments(argc, config->target_args);
-        
-        // Executar programa alvo
-        execve(config->target_executable, config->target_args, config->environment);
+        char** exec_args = config->target_args;
+        char* exec_path = config->target_executable;
+
+        if (config->enable_sandbox) {
+            exec_path = config->sandboxed_executable_path;
+            exec_args[0] = exec_path;
+        }
+
+        execve(exec_path, exec_args, config->environment);
         perror("execve");
         exit(1);
     } else {
-        // Processo pai
-        
-        // Ocultar processo filho se solicitado
+        // --- PROCESSO PAI ---
         if (config->hide_process && config->kernel_mode) {
-            sleep(1); // Aguardar processo inicializar
-            hide_process_in_kernel(child_pid, config->verbose);
+            sleep(1);
+            communicate_with_kernel(STEALTH_HIDE_PID, &child_pid);
         }
         
-        // Aguardar processo filho
         waitpid(child_pid, &status, 0);
         
-        // Desocultar processo
         if (config->hide_process && config->kernel_mode) {
             communicate_with_kernel(STEALTH_UNHIDE_PID, &child_pid);
         }
@@ -275,7 +154,7 @@ static int execute_target(struct launcher_config *config) {
     }
 }
 
-// Função para analisar argumentos da linha de comando
+// ... (parse_arguments e check_privileges permanecem os mesmos, mas precisam ser lidos novamente para garantir)
 static int parse_arguments(int argc, char **argv, struct launcher_config *config) {
     int i;
     int target_start = -1;
@@ -286,6 +165,7 @@ static int parse_arguments(int argc, char **argv, struct launcher_config *config
     config->hide_process = 1;
     config->anti_debug = 1;
     config->kernel_mode = 1;
+    config->enable_sandbox = 0; // Sandbox desativado por padrão
     
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--no-stealth") == 0) {
@@ -296,6 +176,8 @@ static int parse_arguments(int argc, char **argv, struct launcher_config *config
             config->anti_debug = 0;
         } else if (strcmp(argv[i], "--no-kernel") == 0) {
             config->kernel_mode = 0;
+        } else if (strcmp(argv[i], "--enable-sandbox") == 0) {
+            config->enable_sandbox = 1;
         } else if (strcmp(argv[i], "--verbose") == 0 || strcmp(argv[i], "-v") == 0) {
             config->verbose = 1;
         } else if (strcmp(argv[i], "--working-dir") == 0 || strcmp(argv[i], "-w") == 0) {
@@ -308,16 +190,16 @@ static int parse_arguments(int argc, char **argv, struct launcher_config *config
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf("Uso: %s [opções] <executável> [argumentos...]\n", argv[0]);
             printf("\nOpções:\n");
-            printf("  --no-stealth      Desativar modo furtivo\n");
-            printf("  --no-hide         Não ocultar processo\n");
-            printf("  --no-anti-debug   Desativar anti-debug\n");
-            printf("  --no-kernel       Não usar módulo do kernel\n");
-            printf("  --verbose, -v     Modo verboso\n");
-            printf("  --working-dir, -w Diretório de trabalho\n");
-            printf("  --help, -h        Mostrar esta ajuda\n");
+            printf("  --no-stealth         Desativar modo furtivo\n");
+            printf("  --no-hide            Não ocultar processo\n");
+            printf("  --no-anti-debug      Desativar anti-debug\n");
+            printf("  --no-kernel          Não usar módulo do kernel\n");
+            printf("  --enable-sandbox     Ativar sandbox de filesystem (experimental)\n");
+            printf("  --verbose, -v        Modo verboso\n");
+            printf("  --working-dir, -w    Diretório de trabalho\n");
+            printf("  --help, -h           Mostrar esta ajuda\n");
             return 1;
         } else {
-            // Primeiro argumento não-opção é o executável alvo
             target_start = i;
             break;
         }
@@ -335,11 +217,9 @@ static int parse_arguments(int argc, char **argv, struct launcher_config *config
     return 0;
 }
 
-// Função para verificar privilégios
 static int check_privileges(void) {
     if (geteuid() != 0) {
-        printf("Aviso: Executando sem privilégios de root.\n");
-        printf("Algumas funcionalidades podem não estar disponíveis.\n");
+        printf("ERRO: Esta funcionalidade (sandbox) requer privilégios de root.\n");
         return 0;
     }
     return 1;
@@ -353,46 +233,29 @@ int main(int argc, char **argv) {
     printf("BarrierLayer Stealth Launcher v3.0\n");
     printf("===================================\n\n");
     
-    // Analisar argumentos
     ret = parse_arguments(argc, argv, &config);
-    if (ret != 0) {
-        return ret;
+    if (ret != 0) return ret > 0 ? 0 : 1;
+
+    if (config.enable_sandbox && !check_privileges()) {
+        return 1;
     }
     
-    // Verificar privilégios
-    check_privileges();
-    
-    // Verificar se o executável alvo existe
     if (access(config.target_executable, X_OK) != 0) {
         printf("Erro: Executável '%s' não encontrado ou não executável\n", config.target_executable);
         return 1;
     }
     
-    // Carregar módulo do kernel se necessário
     if (config.kernel_mode) {
         if (!check_kernel_module()) {
-            if (config.verbose) {
-                printf("Módulo do kernel não encontrado, tentando carregar...\n");
-            }
-            
             if (load_kernel_module(config.verbose) != 0) {
-                printf("Aviso: Não foi possível carregar o módulo do kernel\n");
-                printf("Continuando sem funcionalidades kernel-mode...\n");
+                printf("Aviso: Não foi possível carregar o módulo do kernel, continuando sem...\n");
                 config.kernel_mode = 0;
             }
-        } else {
-            if (config.verbose) {
-                printf("Módulo do kernel já está carregado\n");
-            }
+        } else if (config.verbose) {
+            printf("Módulo do kernel já está carregado\n");
         }
     }
     
-    // Configurar modo furtivo
-    if (config.kernel_mode) {
-        setup_stealth_mode(&config);
-    }
-    
-    // Executar programa alvo
     ret = execute_target(&config);
     
     if (config.verbose) {
@@ -401,3 +264,96 @@ int main(int argc, char **argv) {
     
     return ret;
 }
+
+// Implementação da função da sandbox
+static int setup_filesystem_sandbox(struct launcher_config *config) {
+    if (config->verbose) {
+        printf("SANDBOX: Configurando sandbox de sistema de arquivos...\n");
+    }
+
+    if (unshare(CLONE_NEWNS) != 0) {
+        perror("unshare(CLONE_NEWNS)");
+        return -1;
+    }
+
+    if (mount(NULL, "/", NULL, MS_PRIVATE | MS_REC, NULL) != 0) {
+        perror("mount MS_PRIVATE");
+        return -1;
+    }
+
+    mkdir(FAKE_ROOT_PATH, 0755);
+    const char* dirs_to_create[] = {
+        "/C", "/C/windows", "/C/windows/system32", "/C/users", "/C/users/default", "/C/program_files", "/proc", "/C/game", NULL
+    };
+    for (int i = 0; dirs_to_create[i]; i++) {
+        char path[PATH_MAX];
+        snprintf(path, sizeof(path), "%s%s", FAKE_ROOT_PATH, dirs_to_create[i]);
+        mkdir(path, 0755);
+    }
+
+    // Copiar o executável para dentro da sandbox
+    char* exec_basename = basename(config->target_executable);
+    char dest_path[PATH_MAX];
+    snprintf(dest_path, sizeof(dest_path), "%s/C/game/%s", FAKE_ROOT_PATH, exec_basename);
+    if (copy_file(config->target_executable, dest_path) != 0) {
+        fprintf(stderr, "SANDBOX: Falha ao copiar o executável para a sandbox\n");
+        return -1;
+    }
+    config->sandboxed_executable_path = strdup(dest_path + strlen(FAKE_ROOT_PATH)); // Caminho relativo à nova raiz
+
+    char proc_path[PATH_MAX];
+    snprintf(proc_path, sizeof(proc_path), "%s/proc", FAKE_ROOT_PATH);
+    if (mount("proc", proc_path, "proc", 0, NULL) != 0) {
+        perror("mount proc");
+        return -1;
+    }
+
+    if (chroot(FAKE_ROOT_PATH) != 0) {
+        perror("chroot");
+        return -1;
+    }
+
+    if (chdir("/") != 0) {
+        perror("chdir to new root");
+        return -1;
+    }
+
+    if (config->verbose) {
+        printf("SANDBOX: Estrutura de diretórios do Windows criada e executável copiado.\n");
+    }
+
+    return 0;
+}
+
+static int copy_file(const char* src_path, const char* dest_path) {
+    FILE *src, *dest;
+    char buffer[4096];
+    size_t n;
+
+    src = fopen(src_path, "rb");
+    if (!src) return -1;
+
+    dest = fopen(dest_path, "wb");
+    if (!dest) {
+        fclose(src);
+        return -1;
+    }
+
+    while ((n = fread(buffer, 1, sizeof(buffer), src)) > 0) {
+        if (fwrite(buffer, 1, n, dest) != n) {
+            fclose(src);
+            fclose(dest);
+            return -1;
+        }
+    }
+
+    fclose(src);
+    fclose(dest);
+    
+    struct stat st;
+    stat(src_path, &st);
+    chmod(dest_path, st.st_mode);
+
+    return 0;
+}
+

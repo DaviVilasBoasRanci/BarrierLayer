@@ -1,4 +1,4 @@
-[#] Garante execução sob bash
+# Garante execução sob bash
 [ -z "$BASH_VERSION" ] && exec bash "$0" "$@"
 
 #!/bin/bash
@@ -56,24 +56,19 @@ LOG_FILE="$PROJECT_ROOT/barrierlayer_gui.txt"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 if [ "$ENABLE_BARRIERLAYER" = "1" ]; then
-    echo "[BarrierLayer] Ativado. Iniciando via stealth_launcher..."
-    rm -f "$PROJECT_ROOT/barrierlayer_activity.log"
+    echo "[BarrierLayer] Ativado. Iniciando via sandbox_launcher..."
     
-    # Pass all arguments to stealth_launcher
-    # The first argument ($1) is the target executable
-    # The rest of the arguments ($@) are the target executable's arguments
+    # Construct the sandbox_launcher command
+    SANDBOX_LAUNCHER_CMD="$PROJECT_ROOT/bin/sandbox_launcher"
     
-    # Construct the stealth_launcher command
-    STEALTH_LAUNCHER_CMD="$PROJECT_ROOT/bin/stealth_launcher"
-    
-    # Check if stealth_launcher exists and is executable
-    if [[ ! -f "$STEALTH_LAUNCHER_CMD" || ! -x "$STEALTH_LAUNCHER_CMD" ]]; then
-        echo "[BarrierLayer] ERRO: stealth_launcher não encontrado ou não executável em $STEALTH_LAUNCHER_CMD"
+    # Check if sandbox_launcher exists and is executable
+    if [[ ! -f "$SANDBOX_LAUNCHER_CMD" || ! -x "$SANDBOX_LAUNCHER_CMD" ]]; then
+        echo "[BarrierLayer] ERRO: sandbox_launcher não encontrado ou não executável em $SANDBOX_LAUNCHER_CMD"
         exit 1
     fi
     
-    # Execute stealth_launcher with the target executable and its arguments
-    exec "$STEALTH_LAUNCHER_CMD" "$@"
+    # Execute sandbox_launcher with the correct options and pass the game command
+    exec "$SANDBOX_LAUNCHER_CMD" --enable-sandbox --verbose -- "$@"
 else
     echo "[BarrierLayer] Desativado. Iniciando o jogo sem modificações."
     # If BarrierLayer is disabled, just execute the target game directly

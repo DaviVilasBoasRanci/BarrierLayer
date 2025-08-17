@@ -1,11 +1,16 @@
+// src/hooks/kernel_hooks.c (refined modification)
+
 #include "../include/logger.h"
 #include "../include/path_utils.h"
+#include "../include/nt_defs.h" // NEW: Include NT definitions
 
 #include <stdio.h>
 #include <dlfcn.h>
 #include <stdint.h>
 #include <wchar.h>
 #include <stddef.h>
+#include <string.h> // For memcpy
+#include <stdlib.h> // For malloc, free
 
 // Ofuscação de logs para kernel
 static void logkernel(const char* func, void* param1, uint32_t param2) {
@@ -151,10 +156,158 @@ uint32_t NtQueryInformationProcess(void* ProcessHandle, uint32_t ProcessInformat
         real_NtQueryInformationProcess = dlsym(RTLD_NEXT, "NtQueryInformationProcess");
     }
     logkernel("NtQueryInformationProcess", ProcessHandle, ProcessInformationClass);
-    if (real_NtQueryInformationProcess) {
-        return real_NtQueryInformationProcess(ProcessHandle, ProcessInformationClass, ProcessInformation, ProcessInformationLength, ReturnLength);
+
+    if (ProcessInformationClass == SystemProcessInformation) { // Class 5
+        uint32_t status = STATUS_UNSUCCESSFUL;
+        void* original_buffer = NULL;
+        uint32_t original_buffer_size = 0;
+        uint32_t needed_size = 0;
+
+        // First, get the required size for the full process list
+        // Call with a small buffer to get STATUS_INFO_LENGTH_MISMATCH or STATUS_BUFFER_TOO_SMALL
+        // and the needed_size in ReturnLength
+        status = real_NtQueryInformationProcess(
+            ProcessHandle,
+            ProcessInformationClass,
+            NULL, // Pass NULL buffer to get required size
+            0,    // Pass 0 length
+            &needed_size
+        );
+
+        if (status != STATUS_INFO_LENGTH_MISMATCH && status != STATUS_BUFFER_TOO_SMALL) {
+            // Unexpected status, handle as error or pass through
+            if (real_NtQueryInformationProcess) {
+                return real_NtQueryInformationProcess(ProcessHandle, ProcessInformationClass, ProcessInformation, ProcessInformationLength, ReturnLength);
+            }
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        // Allocate buffer for the original process list
+        original_buffer_size = needed_size;
+        original_buffer = malloc(original_buffer_size);
+        if (!original_buffer) {
+            return STATUS_UNSUCCESSFUL; // Out of memory
+        }
+
+        // Get the actual process list
+        status = real_NtQueryInformationProcess(
+            ProcessHandle,
+            ProcessInformationClass,
+            original_buffer,
+            original_buffer_size,
+            &needed_size // This will be the actual size returned
+        );
+
+        if (status == STATUS_SUCCESS) {
+            PSYSTEM_PROCESS_INFORMATION current_process_info = (PSYSTEM_PROCESS_INFORMATION)original_buffer;
+            void* filtered_buffer = malloc(original_buffer_size); // Max possible size
+            if (!filtered_buffer) {
+                free(original_buffer);
+                return STATUS_UNSUCCESSFUL;
+            }
+            uint32_t current_filtered_size = 0;
+            uint32_t entry_offset = 0;
+
+            while (entry_offset < needed_size) {
+                // Calculate the size of the current entry
+                uint32_t current_entry_size = current_process_info->NextEntryOffset;
+                if (current_entry_size == 0) { // Last entry
+                    current_entry_size = needed_size - entry_offset;
+                }
+
+                // Determine if this process should be hidden
+                int hide_this_process = 0;
+                if (current_process_info->ImageName.Buffer && current_process_info->ImageName.Length > 0) {
+                    // Ensure null-termination for wcsstr
+                    wchar_t image_name_w[256];
+                    wcsncpy(image_name_w, current_process_info->ImageName.Buffer, current_process_info->ImageName.Length / sizeof(wchar_t));
+                    image_name_w[current_process_info->ImageName.Length / sizeof(wchar_t)] = L'\0';
+
+                    // Hide specific process names
+                    if (wcsstr(image_name_w, L"bash") || wcsstr(image_name_w, L"sh") ||
+                        wcsstr(image_name_w, L"zsh") || wcsstr(image_name_w, L"BarrierLayer") ||
+                        wcsstr(image_name_w, L"sandbox_launcher") || wcsstr(image_name_w, L"stealth_launcher") ||
+                        wcsstr(image_name_w, L"wine") || wcsstr(image_name_w, L"wineserver") ||
+                        wcsstr(image_name_w, L"explorer.exe") || wcsstr(image_name_w, L"conhost.exe") ||
+                        wcsstr(image_name_w, L"csrss.exe") || wcsstr(image_name_w, L"winlogon.exe") ||
+                        wcsstr(image_name_w, L"services.exe") || wcsstr(image_name_w, L"lsass.exe") ||
+                        wcsstr(image_name_w, L"smss.exe") || wcsstr(image_name_w, L"dwm.exe") ||
+                        wcsstr(image_name_w, L"taskmgr.exe") || wcsstr(image_name_w, L"cmd.exe") ||
+                        wcsstr(image_name_w, L"powershell.exe") || wcsstr(image_name_w, L"notepad.exe") ||
+                        wcsstr(image_name_w, L"EasyAntiCheat.sys") || wcsstr(image_name_w, L"BEService.exe")) {
+                        hide_this_process = 1;
+                    }
+                }
+
+                // If the process is not hidden, copy it to the filtered buffer
+                if (!hide_this_process) {
+                    if (current_filtered_size + current_entry_size <= original_buffer_size) {
+                        memcpy((char*)filtered_buffer + current_filtered_size, current_process_info, current_entry_size);
+                        current_filtered_size += current_entry_size;
+                    } else {
+                        // This should ideally not happen if original_buffer_size is large enough
+                        // but indicates an issue if the filtered list exceeds the original buffer size.
+                        // For now, break and return partial list.
+                        break;
+                    }
+                }
+
+                // Move to the next entry
+                if (current_process_info->NextEntryOffset == 0) {
+                    break; // Last entry
+                }
+                entry_offset += current_process_info->NextEntryOffset;
+                current_process_info = (PSYSTEM_PROCESS_INFORMATION)((char*)original_buffer + entry_offset);
+            }
+
+            // Adjust NextEntryOffset for all entries in the filtered buffer
+            // and set the last entry's NextEntryOffset to 0
+            if (current_filtered_size > 0) {
+                PSYSTEM_PROCESS_INFORMATION iter_process_info = (PSYSTEM_PROCESS_INFORMATION)filtered_buffer;
+                uint32_t iter_offset = 0;
+                while (iter_offset < current_filtered_size) {
+                    // Check if this is the last entry in the filtered list
+                    if (iter_process_info->NextEntryOffset == 0 || (iter_offset + iter_process_info->NextEntryOffset) >= current_filtered_size) {
+                        iter_process_info->NextEntryOffset = 0; // Mark as last
+                        break;
+                    }
+                    iter_offset += iter_process_info->NextEntryOffset;
+                    iter_process_info = (PSYSTEM_PROCESS_INFORMATION)((char*)filtered_buffer + iter_offset);
+                }
+            }
+
+            // Copy the filtered list to the user-provided buffer
+            if (ProcessInformation && ProcessInformationLength >= current_filtered_size) {
+                memcpy(ProcessInformation, filtered_buffer, current_filtered_size);
+                status = STATUS_SUCCESS;
+            } else {
+                status = STATUS_BUFFER_TOO_SMALL;
+            }
+
+            if (ReturnLength) {
+                *ReturnLength = current_filtered_size;
+            }
+            
+            free(original_buffer);
+            free(filtered_buffer);
+            return status;
+
+        } else {
+            // If original call failed, free buffer and return original status
+            free(original_buffer);
+            if (real_NtQueryInformationProcess) {
+                return real_NtQueryInformationProcess(ProcessHandle, ProcessInformationClass, ProcessInformation, ProcessInformationLength, ReturnLength);
+            }
+            return status;
+        }
+
+    } else {
+        // For other classes, just call the original function
+        if (real_NtQueryInformationProcess) {
+            return real_NtQueryInformationProcess(ProcessHandle, ProcessInformationClass, ProcessInformation, ProcessInformationLength, ReturnLength);
+        }
     }
-    return 0xC0000001;
+    return STATUS_UNSUCCESSFUL;
 }
 
 // --- NtSetInformationProcess ---

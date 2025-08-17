@@ -4,12 +4,31 @@
 #include <sys/resource.h>
 #include <seccomp.h>
 #include <linux/seccomp.h>
+#include <unistd.h>
+#include <sys/mount.h>
+#include <stdio.h> // Para perror
+#include <stdlib.h> // For system()
 #include "../include/barrierlayer.h"
 #include "../include/logger.h"
+#include "../include/path_utils.h" // NEW: Explicitly include path_utils.h
+#include <limits.h>
+#include <sys/stat.h>
+#include <errno.h>
+
+// Define SYS_pivot_root if not available
+#ifndef SYS_pivot_root
+#define SYS_pivot_root 153 // For x86-64 architecture
+#endif
+
+// Define pivot_root if not available (older kernels)
+#ifndef pivot_root
+#define pivot_root(new_root, put_old) syscall(SYS_pivot_root, new_root, put_old)
+#endif
 
 // Protótipos de funções
 static void setup_sandbox_rules(void);
 static void setup_isolated_memory(void);
+static void setup_filesystem_isolation(void);
 static void setup_sandbox_protection(void);
 static void setup_resource_limits(void);
 static void setup_network_isolation(void);
@@ -35,25 +54,14 @@ static SANDBOX_CONTEXT sandbox = {0};
 
 // Inicialização do sandbox
 int initialize_sandbox(void) {
-    logger_log("/var/log/barrierlayer.log", "Inicializando sandbox");
-    
-    // Cria contexto do seccomp
-    sandbox.ctx = seccomp_init(SCMP_ACT_ALLOW);
-    if (!sandbox.ctx) {
-        return -1;
-    }
-    
-    // Configura regras do sandbox
-    setup_sandbox_rules();
-    
-    // Inicializa memória isolada
-    setup_isolated_memory();
-    
-    // Configura proteções
-    setup_sandbox_protection();
-    
+    dprintf(STDOUT_FILENO, "DEBUG: Initializing sandbox - Direct dprintf to stdout.\n");
+    setup_filesystem_isolation(); // Call the filesystem isolation setup
+    setup_sandbox_protection(); // Call the sandbox protection setup
     return 0;
 }
+
+
+
 
 // Configuração de regras do sandbox
 void setup_sandbox_rules(void) {
@@ -82,12 +90,128 @@ void setup_isolated_memory(void) {
     );
     
     if (sandbox.isolated_memory == MAP_FAILED) {
-        logger_log("/var/log/barrierlayer.log", "Falha ao alocar memória isolada");
+        logger_log(get_log_path(), "Falha ao alocar memória isolada");
         return;
     }
     
     // Configura proteções de memória
     mprotect(sandbox.isolated_memory, sandbox.memory_size, PROT_READ | PROT_WRITE);
+}
+
+// Isola o sistema de arquivos (executado DENTRO dos namespaces criados pelo launcher)
+static void setup_filesystem_isolation(void) {
+    logger_log(get_log_path(), "SANDBOX_CORE: Setting up filesystem isolation.");
+
+    const char* new_root = "/home/davivbrdev/BarrierLayer/fake_c_drive";
+    const char* put_old_dir = "old_root"; // Relative to new_root
+
+    char old_root_path[PATH_MAX];
+    snprintf(old_root_path, PATH_MAX, "%s/%s", new_root, put_old_dir);
+
+    // Create the directory for the old root
+    if (mkdir(old_root_path, 0755) == -1 && errno != EEXIST) {
+        logger_log(get_log_path(), "SANDBOX_CORE: Failed to create old_root directory.");
+        perror("mkdir old_root");
+        return;
+    }
+
+    dprintf(STDOUT_FILENO, "DEBUG: Attempting to bind-mount new_root: %s\n", new_root);
+    // Make the new_root a mount point by bind-mounting it to itself
+    if (mount(new_root, new_root, NULL, MS_BIND, NULL) == -1) {
+        logger_log(get_log_path(), "SANDBOX_CORE: Failed to bind-mount new_root.");
+        perror("mount new_root bind");
+        dprintf(STDOUT_FILENO, "ERROR: Bind-mount failed with errno %d\n", errno);
+        return;
+    }
+    dprintf(STDOUT_FILENO, "DEBUG: Bind-mount successful.\n");
+
+    dprintf(STDOUT_FILENO, "DEBUG: Attempting to make new_root private.\n");
+    // Make the new_root a private mount point
+    // This is crucial for pivot_root to work correctly and to ensure that changes
+    // within the sandbox's filesystem don't affect the host.
+    if (mount(NULL, new_root, NULL, MS_PRIVATE, NULL) == -1) {
+        logger_log(get_log_path(), "SANDBOX_CORE: Failed to make new_root a private mount.");
+        perror("mount new_root private");
+        dprintf(STDOUT_FILENO, "ERROR: Make private failed with errno %d\n", errno);
+        return;
+    }
+    dprintf(STDOUT_FILENO, "DEBUG: New_root made private.\n");
+
+    dprintf(STDOUT_FILENO, "DEBUG: Attempting pivot_root with new_root: %s, old_root_path: %s\n", new_root, old_root_path);
+    dprintf(STDOUT_FILENO, "DEBUG: Changing directory to new_root: %s\n", new_root);
+    if (chdir(new_root) == -1) {
+        logger_log(get_log_path(), "SANDBOX_CORE: Failed to chdir to new_root before pivot_root.");
+        perror("chdir new_root");
+        dprintf(STDOUT_FILENO, "ERROR: chdir to new_root failed with errno %d\n", errno);
+        return;
+    }
+    dprintf(STDOUT_FILENO, "DEBUG: Changed directory to new_root.\n");
+
+    // Perform pivot_root
+    // Use "." for new_root and "old_root" for put_old_dir as we are already in new_root
+    if (pivot_root(".", "old_root") == -1) {
+        logger_log(get_log_path(), "SANDBOX_CORE: Failed to pivot_root.");
+        perror("pivot_root");
+        dprintf(STDOUT_FILENO, "ERROR: pivot_root failed with errno %d\n", errno);
+        return;
+    }
+    dprintf(STDOUT_FILENO, "DEBUG: pivot_root successful.\n");
+
+    // Unmount the old root
+    // After pivot_root, the old root is accessible at old_root_path within the new root.
+    // The path is now relative to the new root.
+    if (umount2("old_root", MNT_DETACH) == -1) {
+        logger_log(get_log_path(), "SANDBOX_CORE: Failed to unmount old_root.");
+        perror("umount2 old_root");
+        dprintf(STDOUT_FILENO, "ERROR: umount2 old_root failed with errno %d\n", errno);
+        // Continue, as failing to unmount might not be critical for sandbox functionality
+    }
+    dprintf(STDOUT_FILENO, "DEBUG: Old root unmounted.\n");
+
+    // Change current directory to the new root's root (which is now ".")
+    if (chdir("/") == -1) {
+        logger_log(get_log_path(), "SANDBOX_CORE: Failed to change directory to new root's root.");
+        perror("chdir /");
+        dprintf(STDOUT_FILENO, "ERROR: chdir / failed with errno %d\n", errno);
+        return;
+    }
+    dprintf(STDOUT_FILENO, "DEBUG: Changed directory to new root's root.\n");
+
+    logger_log(get_log_path(), "SANDBOX_CORE: Filesystem isolation setup complete.");
+
+    // Bind mount essential system directories (optional but recommended for functionality)
+    // These mounts should be done *after* pivot_root and *within* the new root.
+    // /proc
+    if (mkdir("/proc", 0755) == -1 && errno != EEXIST) {
+        logger_log(get_log_path(), "SANDBOX_CORE: Failed to create /proc directory in new root.");
+        perror("mkdir /proc");
+    } else if (mount("proc", "/proc", "proc", 0, NULL) == -1) {
+        logger_log(get_log_path(), "SANDBOX_CORE: Failed to mount /proc.");
+        perror("mount /proc");
+    }
+
+    // /sys
+    if (mkdir("/sys", 0755) == -1 && errno != EEXIST) {
+        logger_log(get_log_path(), "SANDBOX_CORE: Failed to create /sys directory in new root.");
+        perror("mkdir /sys");
+    } else if (mount("sysfs", "/sys", "sysfs", 0, NULL) == -1) {
+        logger_log(get_log_path(), "SANDBOX_CORE: Failed to mount /sys.");
+        perror("mount /sys");
+    }
+
+    // /dev
+    if (mkdir("/dev", 0755) == -1 && errno != EEXIST) {
+        logger_log(get_log_path(), "SANDBOX_CORE: Failed to create /dev directory in new root.");
+        perror("mkdir /dev");
+    } else if (mount("tmpfs", "/dev", "tmpfs", MS_NOSUID | MS_STRICTATIME, "mode=0755") == -1) {
+        logger_log(get_log_path(), "SANDBOX_CORE: Failed to mount /dev tmpfs.");
+        perror("mount /dev tmpfs");
+    } else {
+        // Create essential device nodes if /dev is tmpfs
+        // This is a simplified example; a full /dev setup is complex.
+        // For a real sandbox, consider bind-mounting the host's /dev or using a devtmpfs with mknod.
+        // For now, we'll assume the launcher handles more complex /dev setup or the app doesn't need it.
+    }
 }
 
 // Sistema de proteção do sandbox
@@ -116,7 +240,7 @@ void setup_recovery_system(void) {
 
 // Handlers de recuperação
 void handle_sandbox_violation(int signal) {
-    logger_log("/var/log/barrierlayer.log", "Violação detectada no sandbox");
+    logger_log(get_log_path(), "Violação detectada no sandbox");
     
     // Salva estado atual
     save_current_state();
@@ -133,7 +257,17 @@ static void setup_resource_limits(void) {
 }
 
 static void setup_network_isolation(void) {
-    // TODO: Implementar isolamento de rede
+    logger_log(get_log_path(), "SANDBOX_CORE: Setting up network isolation.");
+
+    // Bring up the loopback interface
+    if (system("ip link set lo up") == -1) {
+        logger_log(get_log_path(), "SANDBOX_CORE: Failed to bring up loopback interface.");
+        perror("ip link set lo up");
+    } else {
+        logger_log(get_log_path(), "SANDBOX_CORE: Loopback interface brought up.");
+    }
+
+    // TODO: Implement more advanced network isolation (e.g., iptables rules, veth pairs)
 }
 
 static void setup_memory_protection(void) {

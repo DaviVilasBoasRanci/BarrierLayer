@@ -33,6 +33,7 @@ DETECTED_STEAM=""
 TARGET_EXECUTABLE=""
 LAUNCH_MODE=""
 VERBOSE=0
+SANDBOX_MODE=0
 
 # Função para log
 log_info() {
@@ -276,7 +277,7 @@ launch_application() {
             log_info "Launching as native Linux application..."
             exec "$executable" "${args[@]}"
             ;;
-        "wine"|"wine-existing")
+        "wine"|"wine-existing"|"heroic"|"lutris")
             setup_wine_environment
             log_info "Launching via Wine..."
             exec "$DETECTED_WINE" "$executable" "${args[@]}"
@@ -415,6 +416,7 @@ show_help() {
     echo "  -i, --interactive   Show interactive menu"
     echo "  -v, --verbose       Verbose output"
     echo "  -h, --help          Show this help"
+    echo "  --sandbox           Enable filesystem sandbox mode (experimental)"
     echo "  --stealth           Enable stealth mode (default)"
     echo "  --no-stealth        Disable stealth mode"
     echo "  --anti-debug        Enable anti-debug (default)"
@@ -439,10 +441,6 @@ show_help() {
 
 # Função principal
 main() {
-<<<<<<< HEAD
-    # Função principal
-main() {
-    # Parse argumentos
     while [[ $# -gt 0 ]]; do
         case $1 in
             -w|--wine)
@@ -457,108 +455,8 @@ main() {
                 LAUNCH_MODE="native"
                 shift
                 ;;
-            -i|--interactive)
-                show_banner
-                detect_wine
-                detect_proton
-                detect_steam
-                show_interactive_menu
-                if [[ -z "$TARGET_EXECUTABLE" ]]; then
-                    read -p "Enter executable path: " TARGET_EXECUTABLE
-                fi
-                break
-                ;;
-            -v|--verbose)
-                VERBOSE=1
-                shift
-                ;;
-            -h|--help)
-                show_help
-                exit 0
-                ;;
-            --stealth)
-                STEALTH_MODE=1
-                shift
-                ;;
-            --no-stealth)
-                STEALTH_MODE=0
-                shift
-                ;;
-            --anti-debug)
-                ANTI_DEBUG=1
-                shift
-                ;;
-            --no-anti-debug)
-                ANTI_DEBUG=0
-                shift
-                ;;
-            --hide-process)
-                HIDE_PROCESS=1
-                shift
-                ;;
-            --no-hide-process)
-                HIDE_PROCESS=0
-                shift
-                ;;
-            --kernel-mode)
-                KERNEL_MODE=1
-                shift
-                ;;
-            --no-kernel-mode)
-                KERNEL_MODE=0
-                shift
-                ;;
-            -*)
-                log_error "Unknown option: $1"
-                show_help
-                exit 1
-                ;;
-            *)
-                TARGET_EXECUTABLE="$1"
-                shift
-                break
-                ;;
-        esac
-    done
-    
-    # Verificar se executável foi fornecido
-    if [[ -z "$TARGET_EXECUTABLE" ]]; then
-        show_help
-        exit 1
-    fi
-    
-    # Verificar se executável existe
-    if [[ ! -f "$TARGET_EXECUTABLE" && ! -x "$TARGET_EXECUTABLE" ]]; then
-        log_error "Executable not found: $TARGET_EXECUTABLE"
-        exit 1
-    fi
-    
-    # Detectar ambiente se não especificado
-    if [[ -z "$LAUNCH_MODE" ]]; then
-        detect_environment
-    }
-    
-    # Configurar BarrierLayer
-    setup_barrierlayer
-    
-    # Lançar aplicação
-    launch_application "$TARGET_EXECUTABLE" "$@"
-}
-=======
-    # Parse argumentos
->>>>>>> a909be7df856e5d04815b7b49ee1cc853f80a638
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            -w|--wine)
-                LAUNCH_MODE="wine"
-                shift
-                ;;
-            -p|--proton)
-                LAUNCH_MODE="proton"
-                shift
-                ;;
-            -n|--native)
-                LAUNCH_MODE="native"
+            --sandbox)
+                SANDBOX_MODE=1
                 shift
                 ;;
             -i|--interactive)
@@ -610,11 +508,30 @@ main() {
         detect_environment
     fi
     
-    # Configurar BarrierLayer
-    setup_barrierlayer
-    
     # Lançar aplicação
-    launch_application "$TARGET_EXECUTABLE" "$@"
+    if [[ $SANDBOX_MODE -eq 1 ]]; then
+        log_info "Launching with Filesystem Sandbox..."
+        
+        # Ensure absolute path for the executable
+        if [[ ! "$TARGET_EXECUTABLE" = /* ]]; then
+            TARGET_EXECUTABLE_ABS="$(pwd)/$TARGET_EXECUTABLE"
+        else
+            TARGET_EXECUTABLE_ABS="$TARGET_EXECUTABLE"
+        fi
+        
+        # Construct arguments for sandbox_launcher
+        SANDBOX_ARGS=()
+        if [[ $VERBOSE -eq 1 ]]; then
+            SANDBOX_ARGS+=("--verbose")
+        fi
+        
+        # Note: The sandbox_launcher we built requires sudo and has its own --enable-sandbox flag
+        sudo "$SCRIPT_DIR/bin/sandbox_launcher" --enable-sandbox "${SANDBOX_ARGS[@]}" "$TARGET_EXECUTABLE_ABS" "$@"
+    else
+        # Configurar BarrierLayer
+        setup_barrierlayer
+        launch_application "$TARGET_EXECUTABLE" "$@"
+    fi
 }
 
 # Executar se chamado diretamente

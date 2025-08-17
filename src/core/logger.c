@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
+#include <errno.h> // NEW: For errno
 
 static int logger_initialized = 0;
 static FILE* log_file = NULL;
@@ -11,6 +12,9 @@ static FILE* log_file = NULL;
 void logger_init(const char *log_path) {
     if (!logger_initialized) {
         log_file = fopen(log_path, "a");
+        if (!log_file) { // NEW: Check if fopen failed
+            fprintf(stderr, "LOGGER_ERROR: Failed to open log file %s: %s\n", log_path, strerror(errno));
+        }
         if (log_file) {
             time_t now = time(NULL);
             char time_buf[20];
@@ -24,7 +28,10 @@ void logger_init(const char *log_path) {
 
 void logger_log(const char *log_path, const char *msg) {
     logger_init(log_path);
-    if (!log_file) log_file = fopen(log_path, "a");
+    if (!log_file) { // NEW: Check if log_file is still NULL after init
+        fprintf(stderr, "LOGGER_ERROR: Log file not open for %s: %s\n", log_path, strerror(errno));
+        return; // Prevent further attempts to write to NULL file
+    }
     if (log_file) {
         time_t now = time(NULL);
         char time_buf[20];
@@ -36,7 +43,10 @@ void logger_log(const char *log_path, const char *msg) {
 
 void logger_logf(const char *log_path, const char *format, ...) {
     logger_init(log_path);
-    if (!log_file) log_file = fopen(log_path, "a");
+    if (!log_file) { // NEW: Check if log_file is still NULL after init
+        fprintf(stderr, "LOGGER_ERROR: Log file not open for %s: %s\n", log_path, strerror(errno));
+        return; // Prevent further attempts to write to NULL file
+    }
     if (log_file) {
         time_t now = time(NULL);
         char time_buf[20];

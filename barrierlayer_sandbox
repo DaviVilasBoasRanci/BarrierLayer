@@ -1,0 +1,66 @@
+#!/bin/bash
+
+# Define o caminho para a raiz do projeto BarrierLayer
+PROJECT_ROOT="/home/davivbrdev/BarrierLayer"
+
+# Define o caminho para o script run_with_barrierlayer.sh
+RUN_SCRIPT="$PROJECT_ROOT/scripts/run_with_barrierlayer.sh"
+
+# Define o caminho para o fake_c_drive, que será nosso WINEPREFIX
+WINE_PREFIX="$PROJECT_ROOT/fake_c_drive"
+
+# Define o caminho para o script de carregamento do módulo kernel
+KERNEL_LOAD_SCRIPT="/usr/local/bin/barrierlayer-load" # Assumindo que 'make install' foi executado
+
+# Check if run_with_barrierlayer.sh exists
+if [ ! -f "$RUN_SCRIPT" ]; then
+    echo "Erro: run_with_barrierlayer.sh não encontrado em $RUN_SCRIPT."
+    echo "Por favor, verifique a instalação do projeto BarrierLayer." >&2
+    exit 1
+fi
+
+# Check if Wine is installed (run_with_barrierlayer.sh also checks, but good to have here)
+if ! command -v wine &> /dev/null
+then
+    echo "Erro: Wine não está instalado. Por favor, instale o Wine para usar a sandbox do Windows." >&2
+    exit 1
+fi
+
+# 1. Load the kernel module if it's not already loaded
+#    This requires root privileges.
+if ! lsmod | grep -q barrierlayer_kernel_advanced; then
+    echo "Carregando o módulo kernel do BarrierLayer..."
+    if [ -f "$KERNEL_LOAD_SCRIPT" ]; then
+        echo "Comando: sudo $KERNEL_LOAD_SCRIPT" >&2
+        sudo "$KERNEL_LOAD_SCRIPT"
+        if [ $? -ne 0 ]; then
+            echo "Erro: Falha ao carregar o módulo kernel do BarrierLayer. Verifique as permissões ou a instalação." >&2
+            exit 1
+        fi
+    else
+        echo "Aviso: Script de carregamento do módulo kernel ($KERNEL_LOAD_SCRIPT) não encontrado." >&2
+        echo "Certifique-se de ter executado 'sudo make -f Makefile.advanced install' para instalar os componentes do kernel." >&2
+        echo "Tentando carregar o módulo diretamente..." >&2
+        # Attempt to load directly if script not found, might fail without proper paths
+        sudo insmod "$PROJECT_ROOT/kernel/barrierlayer_kernel_advanced.ko" 2>/dev/null
+        if [ $? -ne 0 ]; then
+            echo "Erro: Não foi possível carregar o módulo kernel diretamente. Por favor, instale-o corretamente." >&2
+            exit 1
+        fi
+    fi
+else
+    echo "Módulo kernel do BarrierLayer já carregado."
+fi
+
+echo "Iniciando a sandbox do Windows com BarrierLayer..."
+echo "WINEPREFIX: $WINE_PREFIX"
+
+# Set WINEPREFIX for the current shell session
+export WINEPREFIX="$WINE_PREFIX"
+
+# Set ENABLE_BARRIERLAYER to activate BarrierLayer features
+export ENABLE_BARRIERLAYER=1
+
+# Execute run_with_barrierlayer.sh with wineconsole cmd.exe as the target
+# This will then call sandbox_launcher internally
+"$RUN_SCRIPT" wineconsole cmd.exe
