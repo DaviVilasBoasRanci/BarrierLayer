@@ -1,7 +1,6 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/syscalls.h>
 #include <linux/kallsyms.h>
 #include <linux/unistd.h>
 #include <linux/slab.h>
@@ -11,547 +10,210 @@
 #include <linux/kprobes.h>
 #include <linux/ptrace.h>
 #include <linux/sched.h>
-#include <linux/mm.h>
 #include <linux/fs.h>
-#include <linux/file.h>
-#include <linux/dcache.h>
 #include <linux/namei.h>
+#include <linux/dirent.h>
 #include <linux/security.h>
-#include <linux/time.h>
-#include <linux/rtc.h>
-#include <linux/random.h>
-#include <linux/crypto.h>
-#include <linux/scatterlist.h>
-#include <asm/paravirt.h>
-#include <asm/cacheflush.h>
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Advanced Security Research");
+MODULE_AUTHOR("Advanced Security Research (Kprobe Edition)");
 MODULE_DESCRIPTION("Advanced System Security Layer");
-MODULE_VERSION("3.0");
+MODULE_VERSION("4.2");
 
-// Configurações avançadas do módulo
-#define MODULE_PROC_NAME "sysinfo"  // Nome ofuscado
+#define MODULE_PROC_NAME "sysinfo"
 #define MAX_LOG_ENTRIES 5000
-#define LOG_BUFFER_SIZE 256
-#define HOOK_TRAMPOLINE_SIZE 32
 #define MAX_HIDDEN_PROCESSES 64
-#define STEALTH_DELAY_MS 100
+#define MODULE_FILENAME "barrierlayer_kernel_advanced.ko"
 
-// Estruturas para hooking avançado
-struct hook_info {
-    void *original_func;
-    void *hook_func;
-    void *trampoline;
-    unsigned char original_bytes[HOOK_TRAMPOLINE_SIZE];
-    bool is_active;
-    struct list_head list;
-};
+// --- ESTRUTURAS E VARIÁVEIS GLOBAIS ---
 
 struct stealth_log_entry {
     struct timespec64 timestamp;
     pid_t pid;
-    pid_t tgid;
     char comm[TASK_COMM_LEN];
     char operation[32];
-    unsigned long data[4];
+    char details[128];
     struct list_head list;
 };
 
-// Variáveis globais ofuscadas
-static struct list_head hook_list;
 static struct list_head stealth_log_list;
-static spinlock_t hook_lock;
 static spinlock_t log_lock;
 static atomic_t log_count = ATOMIC_INIT(0);
 static struct proc_dir_entry *proc_entry;
 static bool stealth_mode = true;
-static bool anti_debug_active = true;
 
-// Tabela de syscalls e ponteiros originais
-static unsigned long *sys_call_table;
-static bool table_found = false;
-
-// Ponteiros para syscalls originais (ofuscados)
-static asmlinkage long (*orig_sys_open)(const char __user *filename, int flags, umode_t mode);
-static asmlinkage long (*orig_sys_openat)(int dfd, const char __user *filename, int flags, umode_t mode);
-static asmlinkage long (*orig_sys_read)(unsigned int fd, char __user *buf, size_t count);
-static asmlinkage long (*orig_sys_write)(unsigned int fd, const char __user *buf, size_t count);
-static asmlinkage long (*orig_sys_execve)(const char __user *filename, const char __user *const __user *argv, const char __user *const __user *envp);
-static asmlinkage long (*orig_sys_clone)(unsigned long clone_flags, unsigned long newsp, int __user *parent_tidptr, int __user *child_tidptr, unsigned long tls);
-static asmlinkage long (*orig_sys_mmap)(unsigned long addr, unsigned long len, unsigned long prot, unsigned long flags, unsigned long fd, unsigned long off);
-static asmlinkage long (*orig_sys_ptrace)(long request, long pid, unsigned long addr, unsigned long data);
-static asmlinkage long (*orig_sys_kill)(pid_t pid, int sig);
-static asmlinkage long (*orig_sys_getdents64)(unsigned int fd, struct linux_dirent64 __user *dirent, unsigned int count);
-
-// Lista de processos ocultos
 static pid_t hidden_pids[MAX_HIDDEN_PROCESSES];
 static int hidden_pids_count = 0;
 
-// Função para desabilitar/habilitar proteção de escrita
-static inline void disable_write_protection(void) {
-    unsigned long cr0 = read_cr0();
-    clear_bit(16, &cr0);
-    write_cr0(cr0);
-}
+// --- FUNÇÕES UTILITÁRIAS E DE STEALTH ---
 
-static inline void enable_write_protection(void) {
-    unsigned long cr0 = read_cr0();
-    set_bit(16, &cr0);
-    write_cr0(cr0);
-}
+static void obfuscate_string(char *str, size_t len) { int i; for (i = 0; i < len && str[i]; i++) str[i] ^= 0x42; }
 
-// Função para ofuscar strings sensíveis
-static void obfuscate_string(char *str, size_t len) {
-    int i;
-    for (i = 0; i < len && str[i]; i++) {
-        str[i] ^= 0x42; // XOR simples para ofuscação
-    }
-}
-
-// Função para detectar anti-cheats conhecidos (ofuscada)
 static bool is_suspicious_process(void) {
-    // Strings ofuscadas (XOR com 0x42)
-    char patterns[][32] = {
-        "\x07\x01\x13\x19\x03\x0e\x14\x09\x05\x08\x07\x01\x14", // EasyAntiCheat
-        "\x00\x07\x11\x07\x12\x16\x09\x05\x07", // BEService
-        "\x00\x01\x14\x14\x0c\x07\x1b\x19\x07", // BattlEye
-        "\x16\x03\x05", // VAC
-        "\x07\x11\x07\x03", // ESEA
-        "\x08\x01\x05\x07\x09\x14", // FaceIT
-        "\x16\x01\x0e\x09\x15\x01\x12\x06", // Vanguard
-        "\x09\x01\x0d\x07\x09\x15\x01\x12\x06", // GameGuard
-        "\x0e\x10\x12\x0f\x14\x07\x05\x14", // nProtect
-        "\x1a\x09\x09\x0e\x05\x0f\x06\x07", // Xigncode
-        "\x10\x15\x0e\x0b\x00\x15\x13\x14\x07\x12", // PunkBuster
-        "\x12\x09\x05\x0f\x05\x08\x07\x14", // Ricochet
-        "\x14\x12\x15\x07\x10\x0c\x01\x19", // TruePlay
-    };
-    
-    int i, j;
-    char temp[32];
-    
+    char patterns[][32] = { "\x07\x01\x13\x19\x03\x0e\x14\x09\x05\x08\x07\x01\x14", "\x00\x07\x11\x07\x12\x16\x09\x05\x07", "\x00\x01\x14\x14\x0c\x07\x1b\x19\x07" };
+    int i; char temp[32];
     for (i = 0; i < ARRAY_SIZE(patterns); i++) {
         strncpy(temp, patterns[i], sizeof(temp));
         obfuscate_string(temp, sizeof(temp));
-        
-        if (strstr(current->comm, temp)) {
-            return true;
-        }
+        if (strstr(current->comm, temp)) return true;
     }
     return false;
 }
 
-// Função para adicionar entrada de log furtiva
-static void add_stealth_log(const char *operation, unsigned long *data) {
-    struct stealth_log_entry *entry;
-    unsigned long flags;
-    
-    if (atomic_read(&log_count) >= MAX_LOG_ENTRIES) {
-        return;
-    }
-    
-    entry = kmalloc(sizeof(struct stealth_log_entry), GFP_ATOMIC);
-    if (!entry) {
-        return;
-    }
-    
-    ktime_get_real_ts64(&entry->timestamp);
-    entry->pid = current->pid;
-    entry->tgid = current->tgid;
-    strncpy(entry->comm, current->comm, TASK_COMM_LEN);
-    strncpy(entry->operation, operation, 31);
-    entry->operation[31] = '\0';
-    
-    if (data) {
-        memcpy(entry->data, data, sizeof(unsigned long) * 4);
-    } else {
-        memset(entry->data, 0, sizeof(unsigned long) * 4);
-    }
-    
-    spin_lock_irqsave(&log_lock, flags);
-    list_add_tail(&entry->list, &stealth_log_list);
-    atomic_inc(&log_count);
-    spin_unlock_irqrestore(&log_lock, flags);
-}
-
-// Função anti-debug avançada
-static bool detect_debugging_attempt(void) {
-    // Verificar se há debuggers anexados
-    if (current->ptrace) {
-        return true;
-    }
-    
-    // Verificar timing attacks (detecção de breakpoints)
-    static unsigned long last_jiffies = 0;
-    unsigned long current_jiffies = jiffies;
-    
-    if (last_jiffies != 0 && jiffies_to_msecs(current_jiffies - last_jiffies) < 10) { // Check for very fast execution
-        // This could indicate a debugger skipping instructions or a timing attack
-        return true;
-    }
-    last_jiffies = current_jiffies;
-
-    // Check for process replacement (e.g., by a debugger)
-    if (current->self_exec_id != 0 && current->self_exec_id != current->pid) {
-        return true;
-    }
-
-    // Check for debugger-like exit signals
-    if (current->exit_signal == SIGTRAP || current->exit_signal == SIGSTOP) {
-        return true;
-    }
-    
-    return false;
-}
-
-// Hook avançado para sys_openat com anti-detecção
-static asmlinkage long hooked_sys_openat(int dfd, const char __user *filename, int flags, umode_t mode) {
-    long ret;
-    char *kfilename;
-    unsigned long log_data[4];
-    
-    // Anti-debug check
-    if (anti_debug_active && detect_debugging_attempt()) {
-        // Retornar comportamento normal se debugging for detectado
-        return orig_sys_openat(dfd, filename, flags, mode);
-    }
-    
-    ret = orig_sys_openat(dfd, filename, flags, mode);
-    
-    // Apenas log se não for processo suspeito
-    if (!is_suspicious_process()) {
-        kfilename = kmalloc(PATH_MAX, GFP_KERNEL);
-        if (kfilename && strncpy_from_user(kfilename, filename, PATH_MAX) > 0) {
-            log_data[0] = dfd;
-            log_data[1] = flags;
-            log_data[2] = mode;
-            log_data[3] = ret;
-            
-            add_stealth_log("openat", log_data);
-            kfree(kfilename);
-        }
-    }
-    
-    return ret;
-}
-
-// Hook avançado para sys_execve com mascaramento
-static asmlinkage long hooked_sys_execve(const char __user *filename, 
-                                       const char __user *const __user *argv, 
-                                       const char __user *const __user *envp) {
-    long ret;
-    char *kfilename;
-    unsigned long log_data[4];
-    
-    if (anti_debug_active && detect_debugging_attempt()) {
-        return orig_sys_execve(filename, argv, envp);
-    }
-    
-    ret = orig_sys_execve(filename, argv, envp);
-    
-    if (!is_suspicious_process()) {
-        kfilename = kmalloc(PATH_MAX, GFP_KERNEL);
-        if (kfilename && strncpy_from_user(kfilename, filename, PATH_MAX) > 0) {
-            log_data[0] = current->pid;
-            log_data[1] = current->tgid;
-            log_data[2] = ret;
-            log_data[3] = 0;
-            
-            add_stealth_log("execve", log_data);
-            kfree(kfilename);
-        }
-    }
-    
-    return ret;
-}
-
-// Hook avançado para sys_getdents64 com ocultação de processos
-static asmlinkage long hooked_sys_getdents64(unsigned int fd, struct linux_dirent64 __user *dirent, unsigned int count) {
-    long nread;
-    long bpos;
-    struct linux_dirent64 *d;
-    int i;
-    
-    if (anti_debug_active && detect_debugging_attempt()) {
-        return orig_sys_getdents64(fd, dirent, count);
-    }
-    
-    nread = orig_sys_getdents64(fd, dirent, count);
-    
-    if (nread <= 0 || hidden_pids_count == 0) {
-        return nread;
-    }
-    
-    // Ocultar PIDs da lista
-    for (bpos = 0; bpos < nread;) {
-        d = (struct linux_dirent64 *)((char *)dirent + bpos);
-        
-        for (i = 0; i < hidden_pids_count; i++) {
-            char pid_str[16];
-            snprintf(pid_str, sizeof(pid_str), "%d", hidden_pids[i]);
-            
-            if (strcmp(d->d_name, pid_str) == 0) {
-                int reclen = d->d_reclen;
-                int remaining = nread - (bpos + reclen);
-                
-                if (remaining > 0) {
-                    memmove(d, (char *)d + reclen, remaining);
-                }
-                nread -= reclen;
-                goto next_entry;
-            }
-        }
-        bpos += d->d_reclen;
-    next_entry:
-        ;
-    }
-    
-    return nread;
-}
-
-// Hook avançado para sys_ptrace com bloqueio
-static asmlinkage long hooked_sys_ptrace(long request, long pid, unsigned long addr, unsigned long data) {
-    unsigned long log_data[4];
-    
-    // Bloquear tentativas de ptrace em processos protegidos
-    if (request == PTRACE_ATTACH || request == PTRACE_SEIZE) {
-        int i;
-        for (i = 0; i < hidden_pids_count; i++) {
-            if (hidden_pids[i] == pid) {
-                return -EPERM; // Negar acesso
-            }
-        }
-    }
-    
-    if (!is_suspicious_process()) {
-        log_data[0] = request;
-        log_data[1] = pid;
-        log_data[2] = addr;
-        log_data[3] = data;
-        add_stealth_log("ptrace", log_data);
-    }
-    
-    return orig_sys_ptrace(request, pid, addr, data);
-}
-
-// Hook avançado para sys_kill com bloqueio de sinais de debug
-static asmlinkage long hooked_sys_kill(pid_t pid, int sig) {
-    // Bloquear sinais de debug para processos protegidos
-    if (sig == SIGSTOP || sig == SIGTRAP || sig == SIGCONT) {
-        int i;
-        for (i = 0; i < hidden_pids_count; i++) {
-            if (hidden_pids[i] == pid) {
-                return -EPERM; // Negar acesso
-            }
-        }
-    }
-    return orig_sys_kill(pid, sig);
-}
-
-// Função para simular integridade do kernel Windows (placeholder)
-static void simulate_windows_kernel_integrity(void) {
-    // TODO: Implementar spoofing de checks de integridade do kernel Windows.
-    // Isso pode incluir:
-    // - Retornar valores esperados para chamadas de sistema que verificam a integridade do kernel.
-    // - Spoofing de assinaturas digitais de módulos de kernel ou arquivos de sistema.
-    // - Manipulação de estruturas de dados do kernel para parecerem "limpas".
-}
-
-// Função para instalar hook com trampoline
-static int install_hook(void **syscall_addr, void *hook_func, void **orig_func) {
-    struct hook_info *hook;
-    unsigned long flags;
-    
-    hook = kmalloc(sizeof(struct hook_info), GFP_KERNEL);
-    if (!hook) {
-        return -ENOMEM;
-    }
-    
-    hook->original_func = *syscall_addr;
-    hook->hook_func = hook_func;
-    *orig_func = hook->original_func;
-    
-    // Salvar bytes originais
-    memcpy(hook->original_bytes, *syscall_addr, HOOK_TRAMPOLINE_SIZE);
-    
-    // Instalar hook
-    spin_lock_irqsave(&hook_lock, flags);
-    disable_write_protection();
-    *syscall_addr = hook_func;
-    enable_write_protection();
-    spin_unlock_irqrestore(&hook_lock, flags);
-    
-    hook->is_active = true;
-    list_add_tail(&hook->list, &hook_list);
-    
-    return 0;
-}
-
-// Função para remover todos os hooks
-static void remove_all_hooks(void) {
-    struct hook_info *hook, *tmp;
-    unsigned long flags;
-    
-    spin_lock_irqsave(&hook_lock, flags);
-    disable_write_protection();
-    
-    list_for_each_entry_safe(hook, tmp, &hook_list, list) {
-        if (hook->is_active) {
-            // Restaurar função original
-            // Nota: Esta é uma simplificação. Em um cenário real,
-            // seria necessário restaurar via sys_call_table
-            hook->is_active = false;
-        }
-        list_del(&hook->list);
-        kfree(hook);
-    }
-    
-    enable_write_protection();
-    spin_unlock_irqrestore(&hook_lock, flags);
-}
-
-// Função para ocultar módulo das listas do kernel
 static void hide_module(void) {
     if (stealth_mode) {
-        // Remover da lista de módulos
         list_del_init(&THIS_MODULE->list);
-        // Remover da árvore kobj
         kobject_del(&THIS_MODULE->mkobj.kobj);
     }
 }
 
-// Interface proc para controle (ofuscada)
-static int proc_show(struct seq_file *m, void *v) {
-    struct stealth_log_entry *entry;
-    int count = 0;
-    
-    seq_printf(m, "System Information Monitor v3.0\n");
-    seq_printf(m, "Active entries: %d\n", atomic_read(&log_count));
-    seq_printf(m, "Stealth mode: %s\n", stealth_mode ? "enabled" : "disabled");
-    seq_printf(m, "Anti-debug: %s\n\n", anti_debug_active ? "enabled" : "disabled");
-    seq_printf(m, "Hidden processes: %d\n\n", hidden_pids_count);
-    
-    spin_lock(&log_lock);
-    list_for_each_entry(entry, &stealth_log_list, list) {
-        if (count++ > 50) break; // Limitar saída
-        
-        seq_printf(m, "[%lu.%09lu] PID:%d TGID:%d COMM:%s OP:%s DATA:[%lu,%lu,%lu,%lu]\n",
-                  entry->timestamp.tv_sec, entry->timestamp.tv_nsec,
-                  entry->pid, entry->tgid, entry->comm, entry->operation,
-                  entry->data[0], entry->data[1], entry->data[2], entry->data[3]);
+// --- KPROBE HANDLERS ---
+
+// Handler para openat
+static int openat_pre_handler(struct kprobe *p, struct pt_regs *regs) {
+    char __user *filename_user = (char __user *)regs->si;
+    char *kfilename = kmalloc(PATH_MAX, GFP_KERNEL);
+    if (!kfilename) return 0;
+
+    if (strncpy_from_user(kfilename, filename_user, PATH_MAX) > 0) {
+        if (is_suspicious_process() && 
+           (strstr(kfilename, "barrierlayer") || 
+            strstr(kfilename, "sysinfo") ||
+            strcmp(kfilename, "/proc/cpuinfo") == 0 ||
+            strcmp(kfilename, "/proc/version") == 0 ||
+            strcmp(kfilename, "/proc/stat") == 0) 
+           )
+        {
+            regs->ax = -ENOENT; // Força falha: "Arquivo não encontrado"
+            kfree(kfilename);
+            return 1; // Pula syscall original
+        }
     }
-    spin_unlock(&log_lock);
-    
+    kfree(kfilename);
+    return 0; // Continua syscall original
+}
+
+// Handler para getdents64 (Ocultação de processos)
+static int getdents64_post_handler(struct kprobe *p, struct pt_regs *regs, unsigned long flags) {
+    long nread = regs->ax;
+    if (nread <= 0 || hidden_pids_count == 0) return 0;
+
+    struct linux_dirent64 __user *dirent = (struct linux_dirent64 __user *)regs->si;
+    char *kbuf = kmalloc(nread, GFP_KERNEL);
+    if (!kbuf) return 0;
+    if (copy_from_user(kbuf, dirent, nread)) { kfree(kbuf); return 0; }
+
+    long bpos, new_nread = 0;
+    char *new_kbuf = kmalloc(nread, GFP_KERNEL);
+    if (!new_kbuf) { kfree(kbuf); return 0; }
+
+    for (bpos = 0; bpos < nread;) {
+        struct linux_dirent64 *d = (struct linux_dirent64 *)(kbuf + bpos);
+        int i, should_hide = 0;
+        for (i = 0; i < hidden_pids_count; i++) {
+            char pid_str[16];
+            snprintf(pid_str, sizeof(pid_str), "%d", hidden_pids[i]);
+            if (strcmp(d->d_name, pid_str) == 0) { should_hide = 1; break; }
+        }
+
+        if (!should_hide) {
+            memcpy(new_kbuf + new_nread, d, d->d_reclen);
+            new_nread += d->d_reclen;
+        }
+        bpos += d->d_reclen;
+    }
+
+    if (copy_to_user(dirent, new_kbuf, new_nread)) { /* handle error */ }
+    regs->ax = new_nread;
+
+    kfree(kbuf);
+    kfree(new_kbuf);
     return 0;
 }
 
-static int proc_open(struct inode *inode, struct file *file) {
-    return single_open(file, proc_show, NULL);
+// Handler para ptrace
+static int ptrace_pre_handler(struct kprobe *p, struct pt_regs *regs) {
+    long request = (long)regs->di;
+    pid_t pid = (pid_t)regs->si;
+    int i;
+    if (request == PTRACE_ATTACH || request == PTRACE_SEIZE) {
+        for (i = 0; i < hidden_pids_count; i++) {
+            if (hidden_pids[i] == pid) { regs->ax = -EPERM; return 1; }
+        }
+    }
+    return 0;
 }
 
-static const struct proc_ops proc_fops = {
-    .proc_open = proc_open,
-    .proc_read = seq_read,
-    .proc_lseek = seq_lseek,
-    .proc_release = single_release,
-};
+// Handler para kill
+static int kill_pre_handler(struct kprobe *p, struct pt_regs *regs) {
+    pid_t pid = (pid_t)regs->di;
+    int sig = (int)regs->si;
+    int i;
+    if (sig == SIGSTOP || sig == SIGTRAP || sig == SIGCONT) {
+        for (i = 0; i < hidden_pids_count; i++) {
+            if (hidden_pids[i] == pid) { regs->ax = -EPERM; return 1; }
+        }
+    }
+    return 0;
+}
 
-// Função de inicialização do módulo
+// Handler para security_kernel_read_file (Proteção do nosso .ko)
+static int security_read_pre_handler(struct kprobe *p, struct pt_regs *regs) {
+    struct file *file = (struct file *)regs->di;
+    const char *filename = file->f_path.dentry->d_name.name;
+
+    if (is_suspicious_process() && strcmp(filename, MODULE_FILENAME) == 0) {
+        regs->ax = -ENOENT; // Retorna "Arquivo não encontrado"
+        return 1; // Pula a função original
+    }
+    return 0;
+}
+
+// --- DEFINIÇÕES DAS KPROBES ---
+
+static struct kprobe kp_openat = { .symbol_name = "__x64_sys_openat", .pre_handler = openat_pre_handler };
+static struct kprobe kp_getdents64 = { .symbol_name = "__x64_sys_getdents64", .post_handler = getdents64_post_handler };
+static struct kprobe kp_ptrace = { .symbol_name = "__x64_sys_ptrace", .pre_handler = ptrace_pre_handler };
+static struct kprobe kp_kill = { .symbol_name = "__x64_sys_kill", .pre_handler = kill_pre_handler };
+static struct kprobe kp_security_read = { .symbol_name = "security_kernel_read_file", .pre_handler = security_read_pre_handler };
+
+static struct kprobe *barrierlayer_probes[] = { &kp_openat, &kp_getdents64, &kp_ptrace, &kp_kill, &kp_security_read };
+
+// --- FUNÇÕES DE INICIALIZAÇÃO E CONTROLE ---
+
+static int install_hooks(void) {
+    int i, ret;
+    for (i = 0; i < ARRAY_SIZE(barrierlayer_probes); i++) {
+        ret = register_kprobe(barrierlayer_probes[i]);
+        if (ret < 0) { pr_err("Failed to register kprobe for %s: %d\n", barrierlayer_probes[i]->symbol_name, ret); return ret; }
+    }
+    return 0;
+}
+
+static void remove_hooks(void) {
+    int i; for (i = 0; i < ARRAY_SIZE(barrierlayer_probes); i++) unregister_kprobe(barrierlayer_probes[i]);
+}
+
+static int proc_show(struct seq_file *m, void *v) { seq_printf(m, "System Information Monitor v4.2\n"); return 0; }
+static int proc_open(struct inode *inode, struct file *file) { return single_open(file, proc_show, NULL); }
+static const struct proc_ops proc_fops = { .proc_open = proc_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release };
+
 static int __init advanced_barrierlayer_init(void) {
-    struct kprobe kp = { .symbol_name = "kallsyms_lookup_name" };
-    kallsyms_lookup_name_t kallsyms_lookup_name;
-    int ret;
-    
     pr_info("Advanced Security Layer: Initializing...\n");
-    
-    // Inicializar listas e locks
-    INIT_LIST_HEAD(&hook_list);
     INIT_LIST_HEAD(&stealth_log_list);
-    spin_lock_init(&hook_lock);
     spin_lock_init(&log_lock);
-    
-    // Obter kallsyms_lookup_name via kprobe
-    ret = register_kprobe(&kp);
-    if (ret < 0) {
-        pr_err("Advanced Security Layer: Failed to register kprobe\n");
-        return ret;
-    }
-    kallsyms_lookup_name = (kallsyms_lookup_name_t)kp.addr;
-    unregister_kprobe(&kp);
-    
-    // Encontrar sys_call_table
-    sys_call_table = (unsigned long *)kallsyms_lookup_name("sys_call_table");
-    if (!sys_call_table) {
-        pr_err("Advanced Security Layer: sys_call_table not found\n");
-        return -ENOENT;
-    }
-    table_found = true;
-    
-    // Instalar hooks
-    install_hook((void **)&sys_call_table[__NR_openat], hooked_sys_openat, (void **)&orig_sys_openat);
-    install_hook((void **)&sys_call_table[__NR_execve], hooked_sys_execve, (void **)&orig_sys_execve);
-    install_hook((void **)&sys_call_table[__NR_getdents64], hooked_sys_getdents64, (void **)&orig_sys_getdents64);
-    install_hook((void **)&sys_call_table[__NR_ptrace], hooked_sys_ptrace, (void **)&orig_sys_ptrace);
-    install_hook((void **)&sys_call_table[__NR_kill], hooked_sys_kill, (void **)&orig_sys_kill); // Hook sys_kill
-    
-    // Criar entrada proc
+    if (install_hooks() != 0) return -EFAULT;
     proc_entry = proc_create(MODULE_PROC_NAME, 0644, NULL, &proc_fops);
-    if (!proc_entry) {
-        pr_err("Advanced Security Layer: Failed to create proc entry\n");
-        remove_all_hooks();
-        return -ENOMEM;
-    }
-    
-    // Ocultar módulo se stealth mode estiver ativo
+    if (!proc_entry) { remove_hooks(); return -ENOMEM; }
     hide_module();
-    
     pr_info("Advanced Security Layer: Loaded successfully\n");
     return 0;
 }
 
-// Função de saída do módulo
 static void __exit advanced_barrierlayer_exit(void) {
-    struct stealth_log_entry *entry, *tmp;
-    
-    // Remover entrada proc
-    if (proc_entry) {
-        proc_remove(proc_entry);
-    }
-    
-    // Remover todos os hooks
-    remove_all_hooks();
-    
-    // Limpar logs
-    spin_lock(&log_lock);
-    list_for_each_entry_safe(entry, tmp, &stealth_log_list, list) {
-        list_del(&entry->list);
-        kfree(entry);
-    }
-    spin_unlock(&log_lock);
-    
+    if (proc_entry) proc_remove(proc_entry);
+    remove_hooks();
     pr_info("Advanced Security Layer: Unloaded\n");
-}
-
-// Funções para controle de PIDs ocultos (via ioctl ou proc)
-int add_hidden_pid(pid_t pid) {
-    if (hidden_pids_count < MAX_HIDDEN_PROCESSES) {
-        hidden_pids[hidden_pids_count++] = pid;
-        return 0;
-    }
-    return -ENOMEM;
-}
-
-int remove_hidden_pid(pid_t pid) {
-    int i;
-    for (i = 0; i < hidden_pids_count; i++) {
-        if (hidden_pids[i] == pid) {
-            hidden_pids[i] = hidden_pids[hidden_pids_count - 1];
-            hidden_pids_count--;
-            return 0;
-        }
-    }
-    return -ENOENT;
 }
 
 module_init(advanced_barrierlayer_init);

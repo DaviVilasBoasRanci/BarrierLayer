@@ -1,132 +1,91 @@
-# Garante execução sob bash
-[ -z "$BASH_VERSION" ] && exec bash "$0" "$@"
-
 #!/bin/bash
 
-# 1. Encontra o caminho absoluto para o diretório do projeto BarrierLayer
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-PROJECT_ROOT="$SCRIPT_DIR/.."
+# Enable debug tracing to log every command.
+set -x
 
-# Variáveis para armazenar caminhos completos
-DETECTED_WINE_FULL_PATH=""
-DETECTED_PROTON_FULL_PATH=""
+# run_with_barrierlayer.sh
+# Final version - Integrates with the advanced C sandbox launcher.
 
-# Função para detectar o caminho completo do Wine
-detect_wine_full_path() {
-    if command -v wine &> /dev/null; then
-        DETECTED_WINE_FULL_PATH=$(which wine)
-        return 0
-    fi
-    local wine_paths=(
-        "/usr/bin/wine"
-        "/usr/local/bin/wine"
-        "$HOME/.local/bin/wine"
-        "/opt/wine/bin/wine"
-    )
-    for path in "${wine_paths[@]}"; do
-        if [[ -x "$path" ]]; then
-            DETECTED_WINE_FULL_PATH="$path"
-            return 0
-        fi
-    done
-    return 1
-}
+# Exit immediately if a command exits with a non-zero status.
+set -e
 
-# Função para detectar o caminho completo do Proton
-detect_proton_full_path() {
-    local proton_paths=(
-        "$HOME/.steam/steam/steamapps/common/Proton*"
-        "$HOME/.local/share/Steam/steamapps/common/Proton*"
-        "/usr/share/steam/steamapps/common/Proton*"
-    )
-    for pattern in "${proton_paths[@]}"; do
-        for path in $pattern; do
-            if [[ -d "$path" && -f "$path/proton" ]]; then
-                DETECTED_PROTON_FULL_PATH="$path/proton"
-                return 0
-            fi
-        done
-    done
-    return 1
-}
-
-# 3. Verifica a variável de ambiente e age de acordo
-
-LOG_FILE="$PROJECT_ROOT/barrierlayer_gui.txt"
-exec > >(tee -a "$LOG_FILE") 2>&1
-
-if [ "$ENABLE_BARRIERLAYER" = "1" ]; then
-    echo "[BarrierLayer] Ativado. Iniciando via sandbox_launcher..."
-    
-    # Construct the sandbox_launcher command
-    SANDBOX_LAUNCHER_CMD="$PROJECT_ROOT/bin/sandbox_launcher"
-    
-    # Check if sandbox_launcher exists and is executable
-    if [[ ! -f "$SANDBOX_LAUNCHER_CMD" || ! -x "$SANDBOX_LAUNCHER_CMD" ]]; then
-        echo "[BarrierLayer] ERRO: sandbox_launcher não encontrado ou não executável em $SANDBOX_LAUNCHER_CMD"
-        exit 1
-    fi
-    
-    # Execute sandbox_launcher with the correct options and pass the game command
-    exec "$SANDBOX_LAUNCHER_CMD" --enable-sandbox --verbose -- "$@"
-else
-    echo "[BarrierLayer] Desativado. Iniciando o jogo sem modificações."
-    # If BarrierLayer is disabled, just execute the target game directly
-    # This assumes the first argument ($1) is the game executable
+# 1. Check if BarrierLayer is enabled
+if [ "$ENABLE_BARRIERLAYER" != "1" ]; then
+    # If not enabled, just execute the command as is.
+    echo "[BarrierLayer] Disabled. Running command directly."
     exec "$@"
 fi
 
-# 6. Determina qual lançador usar (Wine ou Proton) com base na configuração
-CONFIG_FILE="$PROJECT_ROOT/config.mk"
-LAUNCHER_CMD="" # Variável para armazenar o comando completo do lançador
+# 2. Find the project root directory based on the script's location
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+PROJECT_ROOT="$(readlink -f "$SCRIPT_DIR/..")"
+SANDBOX_LAUNCHER="$PROJECT_ROOT/bin/sandbox_launcher"
 
-# Tenta detectar Wine e Proton
-detect_wine_full_path
-detect_proton_full_path
-
-# Padrão é wine, mas tenta usar o caminho completo se detectado
-if [ -n "$DETECTED_WINE_FULL_PATH" ]; then
-    LAUNCHER_CMD="$DETECTED_WINE_FULL_PATH"
-    echo "[BarrierLayer] Wine detectado em: $LAUNCHER_CMD"
-else
-    echo "[BarrierLayer] Aviso: Wine não encontrado no PATH ou locais comuns."
-fi
-
-if [ -f "$CONFIG_FILE" ]; then
-    # Lê a configuração do DEFAULT_LAUNCHER do config.mk
-    LAUNCHER_FROM_CONFIG=$(grep -E '^\s*DEFAULT_LAUNCHER\s*=' "$CONFIG_FILE" | cut -d'=' -f2 | tr -d '[:space:]')
-    if [ "$LAUNCHER_FROM_CONFIG" = "proton" ]; then
-        if [ -n "$DETECTED_PROTON_FULL_PATH" ]; then
-            LAUNCHER_CMD="$DETECTED_PROTON_FULL_PATH"
-            echo "[BarrierLayer] Proton configurado como padrão e detectado em: $LAUNCHER_CMD"
-        else
-            echo "[BarrierLayer] Aviso: Proton configurado como padrão, mas não encontrado. Usando Wine (se disponível)."
-        fi
-    fi
-fi
-
-if [ -z "$LAUNCHER_CMD" ]; then
-    echo "[BarrierLayer] ERRO: Nenhum lançador (Wine ou Proton) disponível. Não é possível iniciar o jogo."
+# 3. Check if the sandbox launcher exists
+if [ ! -x "$SANDBOX_LAUNCHER" ]; then
+    echo "[BarrierLayer] ERROR: Sandbox launcher not found or not executable at $SANDBOX_LAUNCHER" >&2
     exit 1
 fi
 
-echo "[BarrierLayer] Usando o lançador: $LAUNCHER_CMD"
-
-# 7. Executa o jogo com o lançador determinado
-# O `exec` substitui o processo do script pelo processo do jogo.
-# O comando 'file' pode ter problemas com caminhos que contêm espaços, então vamos tentar uma abordagem mais robusta.
-if [ -f "$LAUNCHER_CMD" ]; then
-    ESCAPED_LAUNCHER_CMD=$(printf %q "$LAUNCHER_CMD")
-    echo "[BarrierLayer] DEBUG: $(file -- $ESCAPED_LAUNCHER_CMD)"
-else
-    echo "[BarrierLayer] DEBUG: Lançador não encontrado em: $LAUNCHER_CMD"
+# 4. Argument and Path Detection
+if [ -z "$1" ]; then
+    echo "[BarrierLayer] ERROR: No command provided to run." >&2
+    exit 1
 fi
 
-if [[ "$LAUNCHER_CMD" == *proton ]]; then
-    exec "$LAUNCHER_CMD" run "$@"
-else
-    exec "$LAUNCHER_CMD" "$@"
+GAME_EXECUTABLE=$(readlink -f "$1")
+GAME_DIR=$(dirname "$GAME_EXECUTABLE")
+
+# Detect Proton path from Steam environment variable
+# STEAM_COMPAT_TOOL_PATHS is a colon-separated list, we take the first one.
+PROTON_INSTALL_PATH="${STEAM_COMPAT_TOOL_PATHS%%:*}"
+
+if [ -z "$PROTON_INSTALL_PATH" ] || [ ! -d "$PROTON_INSTALL_PATH" ]; then
+    echo "[BarrierLayer] WARNING: Could not detect Proton path from STEAM_COMPAT_TOOL_PATHS." >&2
+    echo "[BarrierLayer] The game might fail if it relies on Proton/Wine." >&2
+    # We can still proceed, as it might be a native Linux game.
 fi
 
+# 5. Build the final command
 
+# Start with the launcher itself
+CMD=("sudo" "$SANDBOX_LAUNCHER" "--verbose")
 
+# Add the bind mount for the game directory
+CMD+=("--bind" "$GAME_DIR:/game")
+
+# Add the bind mount for the Proton directory if it was found
+if [ -n "$PROTON_INSTALL_PATH" ] && [ -d "$PROTON_INSTALL_PATH" ]; then
+    CMD+=("--bind" "$PROTON_INSTALL_PATH:/proton")
+fi
+
+# Add the separator and the actual command to be executed
+# We need to adjust the executable path to be inside the sandbox
+GAME_EXE_BASENAME=$(basename "$GAME_EXECUTABLE")
+SANDBOXED_GAME_PATH="/game/$GAME_EXE_BASENAME"
+
+# Shift the original arguments to remove the executable path
+ORIGINAL_ARGS=("$@")
+shift
+
+CMD+=("--" "$SANDBOXED_GAME_PATH" "$@")
+
+# 6. Display warning and execute
+echo "-----------------------------------------------------------------"
+_B_GREEN=`tput setaf 2`
+_B_YELLOW=`tput setaf 3`
+_B_BOLD=`tput bold`
+_B_RESET=`tput sgr0`
+
+echo "${_B_BOLD}${_B_GREEN}[BarrierLayer] LAUNCHING GAME IN SANDBOX${_B_RESET}"
+echo ""
+echo "${_B_YELLOW}NOTE:${_B_RESET} This script uses 'sudo' to start the sandbox."
+echo "For a seamless experience on Steam, you may need to configure"
+echo "passwordless sudo for the command below."
+echo ""
+echo "COMMAND:" 
+echo "  ${CMD[*]}"
+echo "-----------------------------------------------------------------"
+
+# Execute the command
+exec "${CMD[@]}"

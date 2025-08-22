@@ -26,8 +26,8 @@ else
 endif
 
 # Base compiler flags
-CFLAGS = -Isrc/include -Wall -Wextra $(CFLAGS_MODE) -D_GNU_SOURCE -fPIC -no-pie
-LDFLAGS = -ldl -lseccomp -pthread
+CFLAGS = -Isrc/include -Wall -Wextra $(CFLAGS_MODE) -D_GNU_SOURCE -fPIC -fstack-protector-strong -D_FORTIFY_SOURCE=2
+LDFLAGS = -Wl,-z,relro,-z,now -ldl -lseccomp -pthread
 
 # Diretórios
 SRC_DIR = src
@@ -68,11 +68,13 @@ $(BIN_DIR):
 
 $(STEALTH_LAUNCHER_BIN): $(STEALTH_LAUNCHER_SRC)
 	@echo -e "$(BLUE)[INFO]$(NC) Building Stealth Launcher..."
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+	$(CC) $(CFLAGS) -pie -o $@ $< $(LDFLAGS)
 
-$(SANDBOX_LAUNCHER_BIN): $(SANDBOX_LAUNCHER_SRC) $(SANDBOX_CORE_SRC) $(CORE_OBJECTS)
+SANDBOX_LAUNCHER_SRC_MAIN = $(SRC_DIR)/sandbox/main_sandbox_launcher.c
+
+$(SANDBOX_LAUNCHER_BIN): $(SANDBOX_LAUNCHER_SRC_MAIN) $(SANDBOX_CORE_SRC) $(CORE_OBJECTS)
 	@echo -e "$(BLUE)[INFO]$(NC) Building Sandbox Launcher..."
-	$(CC) $(CFLAGS) -o $@ $(SANDBOX_LAUNCHER_SRC) $(SANDBOX_CORE_SRC) $(CORE_OBJECTS) $(LDFLAGS)
+	$(CC) $(CFLAGS) -pie -o $@ $(SANDBOX_LAUNCHER_SRC_MAIN) $(SANDBOX_CORE_SRC) $(CORE_OBJECTS) $(LDFLAGS)
 
 $(HHOOK_LIBRARY): $(CORE_OBJECTS) $(HHOOK_OBJECTS)
 	@echo -e "$(BLUE)[INFO]$(NC) Building Hook Library..."

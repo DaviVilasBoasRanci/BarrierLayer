@@ -356,6 +356,6 @@ Todos os hooks geram logs em `$HOME/BarrierLayer/barrierlayer_activity.log` com 
 - **WMI**: 12 hooks
 - **Debug**: 20 hooks
 
-**Total: 195 hooks implementados** - Muito além dos 100 solicitados!
+**Total: 195 hooks implementados** -
 
 Este conjunto abrangente de hooks fornece cobertura completa para interceptar e adaptar praticamente todas as chamadas do Windows que sistemas anti-cheat como EAC e BattlEye podem fazer, garantindo máxima compatibilidade e proteção contra detecção.
