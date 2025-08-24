@@ -29,6 +29,12 @@ if [ ! -f "$HOST_EXE_PATH" ]; then
     exit 1
 fi
 
+# Check for bwrap
+if ! command -v bwrap &> /dev/null; then
+    echo "[BarrierLayer ERROR] bwrap (bubblewrap) is not installed or not in your PATH."
+    exit 1
+fi
+
 # Check for the hook libraries
 if [ ! -f "$BARRIERLAYER_HOOK32_SO" ] || [ ! -f "$BARRIERLAYER_HOOK64_SO" ]; then
     echo "[BarrierLayer ERROR] Hook libraries not found. Missing:"
@@ -39,19 +45,19 @@ if [ ! -f "$BARRIERLAYER_HOOK32_SO" ] || [ ! -f "$BARRIERLAYER_HOOK64_SO" ]; the
 fi
 
 # --- Execution ---
-echo "[BarrierLayer] Starting application: $HOST_EXE_PATH"
+echo "[BarrierLayer] Starting sandbox for: $HOST_EXE_PATH"
 
 # 1. Copy the executable to the virtual desktop inside our fake C: drive
-echo "[BarrierLayer] Copying executable into the Wine prefix..."
+echo "[BarrierLayer] Copying executable into the sandbox..."
 # Ensure the destination directory exists
-mkdir -p "$VIRTUAL_DESKTOP" 
+mkdir -p "$VIRTUAL_DESKTOP"
 cp "$HOST_EXE_PATH" "$VIRTUAL_DESKTOP/"
 if [ $? -ne 0 ]; then
-    echo "[BarrierLayer ERROR] Failed to copy executable into the Wine prefix."
+    echo "[BarrierLayer ERROR] Failed to copy executable into the sandbox."
     exit 1
 fi
 
-# 2. Prepare paths for Wine
+# 2. Prepare paths for bwrap
 EXE_FILENAME=$(basename "$HOST_EXE_PATH")
 # Wine requires backslashes
 SANDBOX_EXE_PATH="C:\\users\\root\\Desktop\\$EXE_FILENAME"
@@ -61,11 +67,28 @@ echo "[BarrierLayer] Injecting anti-cheat hooks..."
 echo "[BarrierLayer] Launching..."
 echo "-----------------------------------------------------------------"
 
-# 3. Run the executable directly with Wine (without bwrap/firejail sandbox)
-WINEPREFIX="$FAKE_C_DRIVE" \
-DISPLAY="$DISPLAY" \
-LD_PRELOAD="/barrierlayer_bin/barrierlayer_hook64.so:/barrierlayer_bin/barrierlayer_hook32.so" \
-wine "$SANDBOX_EXE_PATH"
+# 3. Run the executable inside the bwrap sandbox
+bwrap \
+  --bind "$FAKE_C_DRIVE" /fake_c_drive \
+  --ro-bind "$BARRIERLAYER_BIN_DIR" /barrierlayer_bin \
+  --ro-bind /usr /usr \
+  --ro-bind /bin /bin \
+  --ro-bind /lib /lib \
+  --ro-bind /lib64 /lib64 \
+  --ro-bind /etc /etc \
+  --ro-bind $HOME $HOME \
+  --dev /dev \
+  --proc /proc \
+  --ro-bind /sys /sys \
+  --bind /tmp /tmp \
+  --bind /dev/shm /dev/shm \
+  --ro-bind-try $HOME/.Xauthority $HOME/.Xauthority \
+  --setenv WINEPREFIX /fake_c_drive \
+  --setenv DISPLAY "$DISPLAY" \
+  --setenv LD_PRELOAD "/barrierlayer_bin/barrierlayer_hook64.so:/barrierlayer_bin/barrierlayer_hook32.so" \
+  --share-net \
+  -- \
+  wine "$SANDBOX_EXE_PATH"
 
 EXIT_CODE=$?
 echo "-----------------------------------------------------------------"
