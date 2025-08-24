@@ -1,84 +1,57 @@
 # Como Usar o BarrierLayer
 
-This guide details how to configure, compile, and run BarrierLayer to play your games.
+Este guia detalha como usar o BarrierLayer para rodar executáveis do Windows, aplicando uma camada de compatibilidade para sistemas anti-cheat.
 
-## Step 1: Configuration
+## O Conceito: Duas Camadas
 
-Before compiling, run the configuration script to set your preferences. It will ask which compatibility layer you want to use by default.
+O BarrierLayer funciona com duas camadas principais que agora são combinadas no script de inicialização:
+
+1.  **A Sandbox (`bwrap`):** Cria um "palco" isolado para o jogo rodar, controlando quais arquivos ele pode ver. Isso garante que o Wine funcione em um ambiente limpo e previsível.
+2.  **A Camada Anti-Cheat (`barrierlayer_hook.so`):** Esta é a "mágica" do projeto. É uma biblioteca que é pré-carregada (`LD_PRELOAD`) junto com o jogo. Ela intercepta chamadas de sistema sensíveis que os anti-cheats usam, respondendo de uma maneira que os faz pensar que estão rodando em um ambiente Windows nativo.
+
+O script `run_with_barrierlayer.sh` automatiza a criação da sandbox e a injeção da camada anti-cheat.
+
+## Passo 1: Pré-requisitos
+
+1.  **Compile o Projeto:** A camada anti-cheat (`barrierlayer_hook.so`) precisa ser compilada. Se você ainda não o fez, rode o comando `make` na raiz do projeto.
+    ```bash
+    make all
+    ```
+2.  **Instale as Dependências:** Certifique-se de ter o `wine` e o `bubblewrap` instalados.
+    ```bash
+    # Exemplo para Debian/Ubuntu
+    sudo apt-get update
+    sudo apt-get install wine bubblewrap
+    ```
+
+## Passo 2: Rodando um Executável
+
+Para rodar um jogo ou aplicativo com a proteção do BarrierLayer, passe o caminho do arquivo `.exe` como argumento para o script `scripts/run_with_barrierlayer.sh`.
+
+**Exemplo de Uso:**
 
 ```bash
-./configure.sh
+# Para rodar um jogo com anti-cheat
+./scripts/run_with_barrierlayer.sh /path/to/your/game.exe
 ```
 
-You will have the following options:
-- **Proton**: Recommended for Steam games. The script will try to detect your Proton installation.
-- **Wine**: For Windows games or applications that are not from Steam.
-- **Auto-Detect**: The launcher will try to decide the best option at runtime.
+### O que o script faz:
+1.  Verifica se a biblioteca `barrierlayer_hook.so` existe.
+2.  Copia temporariamente o seu `.exe` para dentro do ambiente `fake_c_drive`.
+3.  Inicia la sandbox segura com `bwrap`.
+4.  Configura o `LD_PRELOAD` para injetar a biblioteca de hook, ativando a camada anti-cheat.
+5.  Executa o `.exe` com o Wine dentro da sandbox protegida.
+6.  Remove a cópia do `.exe` após a finalização.
 
-Your choice will be saved in the `config.mk` file.
+## (Opcional) Integração com o Steam
 
-## Step 2: Compilation
+Você pode usar este script para rodar jogos da Steam com anti-cheat.
 
-After configuring, you can compile the project. The main `Makefile` offers several targets:
-
-- **Compile everything:**
-  ```bash
-  make all
-  ```
-  This command compiles user components (`barrierlayer_hook.so`, `test_runner`, etc.) and the kernel module (`barrierlayer_kernel.ko`).
-
-- **Compile only user components:**
-  ```bash
-  make userspace
-  ```
-
-- **Compile only the kernel module:**
-  ```bash
-  make kernel
-  ```
-
-## Step 3: Running Applications
-
-There are two main ways to use BarrierLayer.
-
-### Method 1: Standalone Launcher
-
-The `barrierlayer-launcher.sh` script is a smart and interactive launcher. It is ideal for testing executables outside of Steam.
-
--   **Force Proton usage:**
-    ```bash
-    ./barrierlayer-launcher.sh -p /path/to/your/game.exe
-    ```
-
--   **Force Wine usage:**
-    ```bash
-    ./barrierlayer-launcher.sh -w /path/to/your/game.exe
-    ```
-
-### Method 2: Steam Integration (Recommended)
-
-For Steam games like Splitgate, it is best to use the integration script directly in the game's launch options.
-
-1.  In your Steam library, right-click on the game and go to **Properties...**
-2.  In the **General** tab, find the **Launch Options** text box.
-3.  Cole o seguinte comando na caixa de texto. **Lembre-se de substituir `/path/to/your/BarrierLayer` pelo caminho absoluto real** para onde você clonou o projeto. Você pode usar `$HOME` como um atalho para seu diretório pessoal.
+1.  Na sua biblioteca Steam, clique com o botão direito no jogo e vá em **Propriedades...**
+2.  Na aba **GERAL**, encontre as **OPÇÕES DE INICIALIZAÇÃO**.
+3.  Cole o seguinte comando, **substituindo `/caminho/absoluto/para/BarrierLayer` pelo caminho real** da pasta do projeto.
 
     ```
-    ENABLE_BARRIERLAYER=1 /path/to/your/BarrierLayer/scripts/run_with_barrierlayer.sh %command%
+    /caminho/absoluto/para/BarrierLayer/scripts/run_with_barrierlayer.sh %command%
     ```
-
-4.  Feche as propriedades e inicie o jogo a partir do Steam.
-
-## Step 4: Analyzing the Output (Logs)
-
-When a game is run with the Steam integration script (`run_with_barrierlayer.sh`), all hook output is redirected to a log file in the project root.
-
--   **Log File:** `barrierlayer_gui.log`
-
-To monitor hook activity in real-time, open a terminal in the BarrierLayer folder and use the `tail` command:
-
-```bash
-tail -f barrierlayer_gui.log
-```
-
-This will show all intercepted functions, which is crucial for understanding game and anti-cheat behavior.
+4.  Feche as propriedades e inicie o jogo. O script irá interceptar o comando e rodá-lo dentro da sandbox com a proteção anti-cheat ativada.

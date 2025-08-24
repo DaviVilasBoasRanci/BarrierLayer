@@ -1,0 +1,56 @@
+6     execve("/usr/bin/wine", ["wine", "TLauncher-Installer-1.8.9.exe"], 0x7fff8bfe09d0 /* 3 vars */) = 0
+6     brk(NULL)                         = 0x5ce9015e3000
+6     mmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x76484d4b4000
+6     access("/etc/ld.so.preload", R_OK) = -1 ENOENT (No such file or directory)
+6     openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+6     fstat(3, {st_mode=S_IFREG|0644, st_size=128407, ...}) = 0
+6     mmap(NULL, 128407, PROT_READ, MAP_PRIVATE, 3, 0) = 0x76484d494000
+6     close(3)                          = 0
+6     openat(AT_FDCWD, "/lib/x86_64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+6     read(3, "\177ELF\2\1\1\3\0\0\0\0\0\0\0\0\3\0>\0\1\0\0\0\220\243\2\0\0\0\0\0"..., 832) = 832
+6     pread64(3, "\6\0\0\0\4\0\0\0@\0\0\0\0\0\0\0@\0\0\0\0\0\0\0@\0\0\0\0\0\0\0"..., 784, 64) = 784
+6     fstat(3, {st_mode=S_IFREG|0755, st_size=2125328, ...}) = 0
+6     pread64(3, "\6\0\0\0\4\0\0\0@\0\0\0\0\0\0\0@\0\0\0\0\0\0\0@\0\0\0\0\0\0\0"..., 784, 64) = 784
+6     mmap(NULL, 2170256, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x76484d200000
+6     mmap(0x76484d228000, 1605632, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x28000) = 0x76484d228000
+6     mmap(0x76484d3b0000, 323584, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x1b0000) = 0x76484d3b0000
+6     mmap(0x76484d3ff000, 24576, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x1fe000) = 0x76484d3ff000
+6     mmap(0x76484d405000, 52624, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = 0x76484d405000
+6     close(3)                          = 0
+6     mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x76484d491000
+6     arch_prctl(ARCH_SET_FS, 0x76484d491740) = 0
+6     set_tid_address(0x76484d491a10)   = 6
+6     set_robust_list(0x76484d491a20, 24) = 0
+6     rseq(0x76484d492060, 0x20, 0, 0x53053053) = 0
+6     mprotect(0x76484d3ff000, 16384, PROT_READ) = 0
+6     mprotect(0x5ce8e3922000, 8192, PROT_READ) = 0
+6     mprotect(0x76484d4ec000, 8192, PROT_READ) = 0
+6     prlimit64(0, RLIMIT_STACK, NULL, {rlim_cur=8192*1024, rlim_max=RLIM64_INFINITY}) = 0
+6     munmap(0x76484d494000, 128407)    = 0
+6     getuid()                          = 0
+6     getgid()                          = 0
+6     getpid()                          = 6
+6     rt_sigaction(SIGCHLD, {sa_handler=0x5ce8e3917cd0, sa_mask=~[RTMIN RT_1], sa_flags=SA_RESTORER, sa_restorer=0x76484d245330}, NULL, 8) = 0
+6     geteuid()                         = 0
+6     getrandom("\x10\x8b\xa0\xf5\x3d\xa5\x06\x59", 8, GRND_NONBLOCK) = 8
+6     brk(NULL)                         = 0x5ce9015e3000
+6     brk(0x5ce901604000)               = 0x5ce901604000
+6     getppid()                         = 1
+6     getcwd("/", 4096)                 = 2
+6     openat(AT_FDCWD, "/usr/bin/wine", O_RDONLY) = 3
+6     fcntl(3, F_DUPFD, 10)             = 10
+6     close(3)                          = 0
+6     fcntl(10, F_SETFD, FD_CLOEXEC)    = 0
+6     geteuid()                         = 0
+6     getegid()                         = 0
+6     rt_sigaction(SIGINT, NULL, {sa_handler=SIG_DFL, sa_mask=[], sa_flags=0}, 8) = 0
+6     rt_sigaction(SIGINT, {sa_handler=0x5ce8e3917cd0, sa_mask=~[RTMIN RT_1], sa_flags=SA_RESTORER, sa_restorer=0x76484d245330}, NULL, 8) = 0
+6     rt_sigaction(SIGQUIT, NULL, {sa_handler=SIG_DFL, sa_mask=[], sa_flags=0}, 8) = 0
+6     rt_sigaction(SIGQUIT, {sa_handler=SIG_DFL, sa_mask=~[RTMIN RT_1], sa_flags=SA_RESTORER, sa_restorer=0x76484d245330}, NULL, 8) = 0
+6     rt_sigaction(SIGTERM, NULL, {sa_handler=SIG_DFL, sa_mask=[], sa_flags=0}, 8) = 0
+6     rt_sigaction(SIGTERM, {sa_handler=SIG_DFL, sa_mask=~[RTMIN RT_1], sa_flags=SA_RESTORER, sa_restorer=0x76484d245330}, NULL, 8) = 0
+6     read(10, "#!/bin/sh -e\n\nwine32=/usr/lib/wi"..., 8192) = 1029
+6     faccessat2(AT_FDCWD, "/usr/lib/wine/wine", X_OK, AT_EACCESS) = 0
+6     execve("/usr/lib/wine/wine", ["/usr/lib/wine/wine", "TLauncher-Installer-1.8.9.exe"], 0x5ce8e39245d8 /* 5 vars */) = 0
+6     brk(NULL)                         = 0x2d
+6     +++ killed by SIGSYS (core dumped) +++

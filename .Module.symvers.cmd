@@ -1,1 +1,0 @@
-savedcmd_/home/davivbrdev/BarrierLayer/Module.symvers :=  scripts/mod/modpost -M -m -a      -o /home/davivbrdev/BarrierLayer/Module.symvers -T /home/davivbrdev/BarrierLayer/modules.order -i Module.symvers -e 

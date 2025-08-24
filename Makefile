@@ -1,5 +1,5 @@
 # BarrierLayer Advanced Build System
-# Version 2.1
+# Version 2.2 (Multi-Arch)
 
 # Include configuration if available
 -include config.mk
@@ -25,60 +25,120 @@ else
     CFLAGS_MODE = -O2 -DNDEBUG
 endif
 
-# Base compiler flags
-CFLAGS = -Isrc/include -Wall -Wextra $(CFLAGS_MODE) -D_GNU_SOURCE -fPIC -fstack-protector-strong -D_FORTIFY_SOURCE=2
-LDFLAGS = -Wl,-z,relro,-z,now -ldl -lseccomp -pthread
+# --- Base Flags (DO NOT EDIT HERE) ---
+BASE_CFLAGS = -Isrc/include -Wall -Wextra $(CFLAGS_MODE) -D_GNU_SOURCE -fPIC -fstack-protector-strong -D_FORTIFY_SOURCE=2
+BASE_LDFLAGS = -Wl,-z,relro,-z,now -ldl -lseccomp -pthread
 
-# Diretórios
+# --- Architecture Specific Flags ---
+# 64-bit (default)
+CFLAGS64 = $(BASE_CFLAGS)
+LDFLAGS64 = $(BASE_LDFLAGS)
+
+# 32-bit
+CFLAGS32 = $(BASE_CFLAGS) -m32
+LDFLAGS32 = $(BASE_LDFLAGS) -m32
+
+# --- Directories ---
 SRC_DIR = src
 BIN_DIR = bin
+OBJ_DIR = obj
+OBJ_DIR64 = $(OBJ_DIR)/x64
+OBJ_DIR32 = $(OBJ_DIR)/x32
 KERNEL_DIR = kernel
 CORE_DIR = $(SRC_DIR)/core
 HOOK_DIR = $(SRC_DIR)/hooks
 
-# Arquivos Fonte
+# --- Source Files ---
 CORE_SOURCES = $(wildcard $(CORE_DIR)/*.c)
-HHOOK_SOURCES = $(wildcard $(HOOK_DIR)/*.c)
+HOOK_SOURCES = $(wildcard $(HOOK_DIR)/*.c)
 STEALTH_LAUNCHER_SRC = $(SRC_DIR)/stealth_launcher.c
 SANDBOX_LAUNCHER_SRC = $(SRC_DIR)/sandbox_launcher.c
 SANDBOX_CORE_SRC = $(SRC_DIR)/sandbox/sandbox_core.c
+SANDBOX_LAUNCHER_SRC_MAIN = $(SRC_DIR)/sandbox/main_sandbox_launcher.c
 
-# Arquivos Objeto
-CORE_OBJECTS = $(CORE_SOURCES:.c=.o)
-HHOOK_OBJECTS = $(HHOOK_SOURCES:.c=.o)
+# --- Object Files ---
+# 64-bit Objects
+CORE_OBJECTS64 = $(patsubst $(CORE_DIR)/%.c,$(OBJ_DIR64)/core/%.o,$(CORE_SOURCES))
+HOOK_OBJECTS64 = $(patsubst $(HOOK_DIR)/%.c,$(OBJ_DIR64)/hooks/%.o,$(HOOK_SOURCES))
+SANDBOX_CORE_OBJ64 = $(patsubst $(SRC_DIR)/sandbox/%.c,$(OBJ_DIR64)/sandbox/%.o,$(SANDBOX_CORE_SRC))
 
-# Binários
+# 32-bit Objects
+CORE_OBJECTS32 = $(patsubst $(CORE_DIR)/%.c,$(OBJ_DIR32)/core/%.o,$(CORE_SOURCES))
+HOOK_OBJECTS32 = $(patsubst $(HOOK_DIR)/%.c,$(OBJ_DIR32)/hooks/%.o,$(HOOK_SOURCES))
+SANDBOX_CORE_OBJ32 = $(patsubst $(SRC_DIR)/sandbox/%.c,$(OBJ_DIR32)/sandbox/%.o,$(SANDBOX_CORE_SRC))
+
+
+# --- Binaries ---
 STEALTH_LAUNCHER_BIN = $(BIN_DIR)/stealth_launcher
 SANDBOX_LAUNCHER_BIN = $(BIN_DIR)/sandbox_launcher
-HHOOK_LIBRARY = $(BIN_DIR)/barrierlayer_hook.so
+HOOK_LIBRARY32 = $(BIN_DIR)/barrierlayer_hook32.so
+HOOK_LIBRARY64 = $(BIN_DIR)/barrierlayer_hook64.so
 
-# Alvo Padrão
-all: $(BIN_DIR) $(HHOOK_LIBRARY) $(STEALTH_LAUNCHER_BIN) $(SANDBOX_LAUNCHER_BIN)
+# --- Targets ---
+
+# Default Target: Build all essential components for both architectures
+all: $(BIN_DIR) $(HOOK_LIBRARY64) $(HOOK_LIBRARY32) $(STEALTH_LAUNCHER_BIN) $(SANDBOX_LAUNCHER_BIN)
 ifeq ($(BUILD_KERNEL),Y)
 	$(MAKE) kernel
 endif
 
-# Criar diretório de binários
-$(BIN_DIR):
+# Create output directories
+$(BIN_DIR) $(OBJ_DIR64) $(OBJ_DIR32):
+	@mkdir -p $(OBJ_DIR64)/core $(OBJ_DIR64)/hooks $(OBJ_DIR64)/sandbox
+	@mkdir -p $(OBJ_DIR32)/core $(OBJ_DIR32)/hooks $(OBJ_DIR32)/sandbox
 	@mkdir -p $(BIN_DIR)
 
-# Regras de Compilação
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
 
-$(STEALTH_LAUNCHER_BIN): $(STEALTH_LAUNCHER_SRC)
-	@echo -e "$(BLUE)[INFO]$(NC) Building Stealth Launcher..."
-	$(CC) $(CFLAGS) -pie -o $@ $< $(LDFLAGS)
+# --- Compilation Rules ---
 
-SANDBOX_LAUNCHER_SRC_MAIN = $(SRC_DIR)/sandbox/main_sandbox_launcher.c
+$(OBJ_DIR64)/core/%.o: $(CORE_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS64) -c $< -o $@
 
-$(SANDBOX_LAUNCHER_BIN): $(SANDBOX_LAUNCHER_SRC_MAIN) $(SANDBOX_CORE_SRC) $(CORE_OBJECTS)
-	@echo -e "$(BLUE)[INFO]$(NC) Building Sandbox Launcher..."
-	$(CC) $(CFLAGS) -pie -o $@ $(SANDBOX_LAUNCHER_SRC_MAIN) $(SANDBOX_CORE_SRC) $(CORE_OBJECTS) $(LDFLAGS)
+$(OBJ_DIR64)/hooks/%.o: $(HOOK_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS64) -c $< -o $@
 
-$(HHOOK_LIBRARY): $(CORE_OBJECTS) $(HHOOK_OBJECTS)
-	@echo -e "$(BLUE)[INFO]$(NC) Building Hook Library..."
-	$(CC) $(CFLAGS) -shared -o $@ $(CORE_OBJECTS) $(HHOOK_OBJECTS) $(LDFLAGS)
+$(OBJ_DIR64)/sandbox/%.o: $(SRC_DIR)/sandbox/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS64) -c $< -o $@
+
+$(OBJ_DIR32)/core/%.o: $(CORE_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS32) -c $< -o $@
+
+$(OBJ_DIR32)/hooks/%.o: $(HOOK_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS32) -c $< -o $@
+
+$(OBJ_DIR32)/sandbox/%.o: $(SRC_DIR)/sandbox/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS32) -c $< -o $@
+
+
+# --- Linking Rules ---
+
+# Build 64-bit Hook Library
+$(HOOK_LIBRARY64): $(CORE_OBJECTS64) $(HOOK_OBJECTS64)
+	@echo -e "$(BLUE)[INFO]$(NC) Building 64-bit Hook Library..."
+	$(CC) $(CFLAGS64) -shared -o $@ $^ $(LDFLAGS64)
+
+# Build 32-bit Hook Library
+$(HOOK_LIBRARY32): $(CORE_OBJECTS32) $(HOOK_OBJECTS32)
+	@echo -e "$(BLUE)[INFO]$(NC) Building 32-bit Hook Library..."
+	$(CC) $(CFLAGS32) -shared -o $@ $^ $(LDFLAGS32)
+
+# Build Launchers (defaulting to 64-bit for now)
+$(STEALTH_LAUNCHER_BIN): $(STEALTH_LAUNCHER_SRC) | $(BIN_DIR)
+	@echo -e "$(BLUE)[INFO]$(NC) Building Stealth Launcher (64-bit)..."
+	$(CC) $(CFLAGS64) -pie -o $@ $< $(LDFLAGS64)
+
+$(SANDBOX_LAUNCHER_BIN): $(SANDBOX_LAUNCHER_SRC_MAIN) $(SANDBOX_CORE_SRC) $(CORE_OBJECTS64) | $(BIN_DIR)
+	@echo -e "$(BLUE)[INFO]$(NC) Building Sandbox Launcher (64-bit)..."
+	$(CC) $(CFLAGS64) -pie -o $@ $(filter %.c,$^) $(filter %.o,$^) $(LDFLAGS64)
+
+
+# --- Other Targets ---
 
 # Alvo do Kernel
 kernel:
@@ -90,14 +150,14 @@ install:
 	@echo -e "$(BLUE)[INFO]$(NC) Installing..."
 	sudo cp $(STEALTH_LAUNCHER_BIN) /usr/local/bin/
 	sudo cp $(SANDBOX_LAUNCHER_BIN) /usr/local/bin/
-	sudo cp $(HHOOK_LIBRARY) /usr/local/lib/
+	sudo cp $(HOOK_LIBRARY64) /usr/local/lib/barrierlayer64.so
+	sudo cp $(HOOK_LIBRARY32) /usr/local/lib/barrierlayer32.so
 	@echo -e "$(GREEN)[SUCCESS]$(NC) Installation complete."
 
 # Alvo de Limpeza
 clean:
 	@echo -e "$(BLUE)[INFO]$(NC) Cleaning..."
-	rm -rf $(BIN_DIR)
-	rm -f $(CORE_DIR)/*.o $(HOOK_DIR)/*.o
+	rm -rf $(BIN_DIR) $(OBJ_DIR)
 	$(MAKE) -C $(KERNEL_DIR) clean
 	@echo -e "$(GREEN)[SUCCESS]$(NC) Clean complete."
 

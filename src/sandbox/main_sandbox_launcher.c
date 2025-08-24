@@ -14,7 +14,37 @@
 #include "sandbox_core.h"
 
 #define CHILD_STACK_SIZE (1024 * 1024)
-#define MAX_BINDS 16
+#define MAX_BINDS 32 // Increased max binds to accommodate defaults
+
+// Recursively creates directories, equivalent to mkdir -p
+static int mkdir_p(const char *path, mode_t mode) {
+    char *p = NULL;
+    char *temp_path = strdup(path);
+    if (temp_path == NULL) {
+        perror("strdup");
+        return -1;
+    }
+
+    for (p = temp_path + 1; *p; p++) {
+        if (*p == '/') {
+            *p = '\0';
+            if (mkdir(temp_path, mode) != 0 && errno != EEXIST) {
+                //perror("mkdir"); // Suppress error printing for intermediate dirs
+                //free(temp_path);
+                //return -1;
+            }
+            *p = '/';
+        }
+    }
+    if (mkdir(temp_path, mode) != 0 && errno != EEXIST) {
+        perror("mkdir_p final");
+        free(temp_path);
+        return -1;
+    }
+
+    free(temp_path);
+    return 0;
+}
 
 struct launcher_config {
     int verbose;
@@ -60,23 +90,58 @@ static int child_function(void *arg) {
     if (config->verbose) printf("CHILD:    ...OverlayFS mounted on %s.\n", mergedir);
 
     if (config->verbose) printf("CHILD: 3. Setting up Bind Mounts...\n");
-    for (int i = 0; i < config->num_binds; i++) {
-        char* spec = strdup(config->bind_mounts[i]);
-        char* host_path = strtok(spec, ":");
+
+    // Default essential bind mounts
+    const char* default_binds[] = {
+        "/usr:/usr",
+        "/lib:/lib",
+        "/lib64:/lib64",
+        "/bin:/bin",
+        "/sbin:/sbin",
+        "/etc:/etc",
+        "/tmp/.X11-unix:/tmp/.X11-unix",
+        "/dev/dri:/dev/dri",
+        "/home/davivbrdev/BarrierLayer/fake_c_drive:/fake_c_drive"
+    };
+    int num_default_binds = sizeof(default_binds) / sizeof(default_binds[0]);
+
+    // Process both default and user-specified mounts
+    if (config->verbose) printf("CHILD:    Applying mounts...\n");
+    for (int i = 0; i < config->num_binds + num_default_binds; i++) {
+        char spec_buffer[PATH_MAX];
+        char* spec;
+
+        // Use default binds first, then user binds
+        if (i < num_default_binds) {
+            spec = (char*)default_binds[i];
+        } else {
+            spec = config->bind_mounts[i - num_default_binds];
+        }
+        
+        strncpy(spec_buffer, spec, sizeof(spec_buffer) - 1);
+        spec_buffer[sizeof(spec_buffer) - 1] = '\0';
+
+        char* host_path = strtok(spec_buffer, ":");
         char* sandbox_path_rel = strtok(NULL, ":");
+
         if (host_path && sandbox_path_rel) {
             char sandbox_path_abs[PATH_MAX];
             snprintf(sandbox_path_abs, sizeof(sandbox_path_abs), "%s%s", mergedir, sandbox_path_rel);
-            if (config->verbose) printf("CHILD:    Binding host '%s' to sandbox '%s'...\n", host_path, sandbox_path_abs);
-            // Create directory if it doesn't exist
-            if (mkdir(sandbox_path_abs, 0755) != 0 && errno != EEXIST) {
-                perror("CHILD: mkdir for bind mount");
-            } else if (mount(host_path, sandbox_path_abs, NULL, MS_BIND | MS_REC, NULL) != 0) {
-                fprintf(stderr, "CHILD: Failed to bind mount %s to %s\n", host_path, sandbox_path_abs);
-                perror("CHILD: mount bind");
+            
+            if (config->verbose) printf("CHILD:      Binding host '%s' to sandbox '%s'...\n", host_path, sandbox_path_abs);
+
+            // Self-verification: Create the target directory before mounting
+            if (mkdir_p(sandbox_path_abs, 0755) != 0) {
+                fprintf(stderr, "CHILD: FATAL: Could not create directory %s for bind mount.\n", sandbox_path_abs);
+                exit(1); // Exit if we can't create the mount point
+            }
+            
+            // Mount the directory
+            if (mount(host_path, sandbox_path_abs, NULL, MS_BIND | MS_REC, NULL) != 0) {
+                fprintf(stderr, "CHILD: FAILED to bind mount %s to %s: %s\n", host_path, sandbox_path_abs, strerror(errno));
+                // We can choose to exit or just warn
             }
         }
-        free(spec);
     }
     if (config->verbose) printf("CHILD:    ...bind mounts configured.\n");
 
@@ -103,10 +168,33 @@ static int child_function(void *arg) {
         exit(1);
     }
 
+    // Setup environment
     clearenv();
     setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
     setenv("TERM", "xterm-256color", 1);
     setenv("BARRIERLAYER_ACTIVE", "1", 1);
+
+    // Pass DISPLAY environment variable for GUI applications
+    char *display_env = getenv("DISPLAY");
+    if (display_env) {
+        setenv("DISPLAY", display_env, 1);
+    }
+    // Set HOME to prevent wine from trying to use /root
+    setenv("HOME", "/", 1);
+    // Set WINEPREFIX to our fake C drive
+    setenv("WINEPREFIX", "/fake_c_drive", 1);
+
+    // Mount the current working directory to /app for file access
+    char* cwd = getenv("BARRIERLAYER_CWD");
+    if (cwd) {
+        char sandbox_path_abs[PATH_MAX];
+        snprintf(sandbox_path_abs, sizeof(sandbox_path_abs), "%s/app", mergedir);
+        if (mkdir_p(sandbox_path_abs, 0755) == 0) {
+            if (mount(cwd, sandbox_path_abs, NULL, MS_BIND | MS_REC, NULL) != 0) {
+                fprintf(stderr, "CHILD: FAILED to bind mount CWD %s to /app: %s\n", cwd, strerror(errno));
+            }
+        }
+    }
 
     if (config->verbose) {
         printf("CHILD: Executing target: %s\n", config->target_executable);
@@ -125,7 +213,7 @@ static int execute_target(struct launcher_config *config) {
     char *child_stack_top = child_stack + CHILD_STACK_SIZE;
 
     // Add CLONE_NEWUSER, CLONE_NEWUTS, CLONE_NEWIPC, CLONE_NEWCGROUP
-    int flags = CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWUSER | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWCGROUP | SIGCHLD;
+    int flags = CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUSER | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWCGROUP | SIGCHLD;
     pid_t child_pid = clone(child_function, child_stack_top, flags, config);
 
     if (child_pid == -1) {

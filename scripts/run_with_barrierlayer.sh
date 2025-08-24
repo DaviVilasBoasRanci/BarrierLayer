@@ -1,91 +1,78 @@
 #!/bin/bash
 
-# Enable debug tracing to log every command.
-set -x
-
 # run_with_barrierlayer.sh
-# Final version - Integrates with the advanced C sandbox launcher.
+# Uses bwrap to create a sandbox and LD_PRELOAD to inject the anti-cheat hook library.
 
-# Exit immediately if a command exits with a non-zero status.
-set -e
-
-# 1. Check if BarrierLayer is enabled
-if [ "$ENABLE_BARRIERLAYER" != "1" ]; then
-    # If not enabled, just execute the command as is.
-    echo "[BarrierLayer] Disabled. Running command directly."
-    exec "$@"
-fi
-
-# 2. Find the project root directory based on the script's location
+# --- Configuration ---
+# Find the project root directory based on the script's location
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-PROJECT_ROOT="$(readlink -f "$SCRIPT_DIR/..")"
-SANDBOX_LAUNCHER="$PROJECT_ROOT/bin/sandbox_launcher"
+PROJECT_ROOT="$(readlink -f "$SCRIPT_DIR/../")"
+FAKE_C_DRIVE="$PROJECT_ROOT/fake_c_drive"
+VIRTUAL_DESKTOP="$FAKE_C_DRIVE/drive_c/users/root/Desktop"
 
-# 3. Check if the sandbox launcher exists
-if [ ! -x "$SANDBOX_LAUNCHER" ]; then
-    echo "[BarrierLayer] ERROR: Sandbox launcher not found or not executable at $SANDBOX_LAUNCHER" >&2
-    exit 1
-fi
+# Path to the BarrierLayer hook libraries on the host
+BARRIERLAYER_BIN_DIR="$PROJECT_ROOT/bin"
+BARRIERLAYER_HOOK32_SO="$BARRIERLAYER_BIN_DIR/barrierlayer_hook32.so"
+BARRIERLAYER_HOOK64_SO="$BARRIERLAYER_BIN_DIR/barrierlayer_hook64.so"
 
-# 4. Argument and Path Detection
+# --- Pre-flight Checks ---
+# Check if an executable path was provided
 if [ -z "$1" ]; then
-    echo "[BarrierLayer] ERROR: No command provided to run." >&2
+    echo "[BarrierLayer ERROR] No executable path provided."
+    echo "Usage: $0 /path/to/your/game.exe"
     exit 1
 fi
 
-GAME_EXECUTABLE=$(readlink -f "$1")
-GAME_DIR=$(dirname "$GAME_EXECUTABLE")
-
-# Detect Proton path from Steam environment variable
-# STEAM_COMPAT_TOOL_PATHS is a colon-separated list, we take the first one.
-PROTON_INSTALL_PATH="${STEAM_COMPAT_TOOL_PATHS%%:*}"
-
-if [ -z "$PROTON_INSTALL_PATH" ] || [ ! -d "$PROTON_INSTALL_PATH" ]; then
-    echo "[BarrierLayer] WARNING: Could not detect Proton path from STEAM_COMPAT_TOOL_PATHS." >&2
-    echo "[BarrierLayer] The game might fail if it relies on Proton/Wine." >&2
-    # We can still proceed, as it might be a native Linux game.
+HOST_EXE_PATH="$1"
+if [ ! -f "$HOST_EXE_PATH" ]; then
+    echo "[BarrierLayer ERROR] File not found: $HOST_EXE_PATH"
+    exit 1
 fi
 
-# 5. Build the final command
-
-# Start with the launcher itself
-CMD=("sudo" "$SANDBOX_LAUNCHER" "--verbose")
-
-# Add the bind mount for the game directory
-CMD+=("--bind" "$GAME_DIR:/game")
-
-# Add the bind mount for the Proton directory if it was found
-if [ -n "$PROTON_INSTALL_PATH" ] && [ -d "$PROTON_INSTALL_PATH" ]; then
-    CMD+=("--bind" "$PROTON_INSTALL_PATH:/proton")
+# Check for the hook libraries
+if [ ! -f "$BARRIERLAYER_HOOK32_SO" ] || [ ! -f "$BARRIERLAYER_HOOK64_SO" ]; then
+    echo "[BarrierLayer ERROR] Hook libraries not found. Missing:"
+    [ ! -f "$BARRIERLAYER_HOOK32_SO" ] && echo "  - $BARRIERLAYER_HOOK32_SO"
+    [ ! -f "$BARRIERLAYER_HOOK64_SO" ] && echo "  - $BARRIERLAYER_HOOK64_SO"
+    echo "Please compile the project with 'make all' first."
+    exit 1
 fi
 
-# Add the separator and the actual command to be executed
-# We need to adjust the executable path to be inside the sandbox
-GAME_EXE_BASENAME=$(basename "$GAME_EXECUTABLE")
-SANDBOXED_GAME_PATH="/game/$GAME_EXE_BASENAME"
+# --- Execution ---
+echo "[BarrierLayer] Starting application: $HOST_EXE_PATH"
 
-# Shift the original arguments to remove the executable path
-ORIGINAL_ARGS=("$@")
-shift
+# 1. Copy the executable to the virtual desktop inside our fake C: drive
+echo "[BarrierLayer] Copying executable into the Wine prefix..."
+# Ensure the destination directory exists
+mkdir -p "$VIRTUAL_DESKTOP" 
+cp "$HOST_EXE_PATH" "$VIRTUAL_DESKTOP/"
+if [ $? -ne 0 ]; then
+    echo "[BarrierLayer ERROR] Failed to copy executable into the Wine prefix."
+    exit 1
+fi
 
-CMD+=("--" "$SANDBOXED_GAME_PATH" "$@")
+# 2. Prepare paths for Wine
+EXE_FILENAME=$(basename "$HOST_EXE_PATH")
+# Wine requires backslashes
+SANDBOX_EXE_PATH="C:\\users\\root\\Desktop\\$EXE_FILENAME"
 
-# 6. Display warning and execute
-echo "-----------------------------------------------------------------"
-_B_GREEN=`tput setaf 2`
-_B_YELLOW=`tput setaf 3`
-_B_BOLD=`tput bold`
-_B_RESET=`tput sgr0`
-
-echo "${_B_BOLD}${_B_GREEN}[BarrierLayer] LAUNCHING GAME IN SANDBOX${_B_RESET}"
-echo ""
-echo "${_B_YELLOW}NOTE:${_B_RESET} This script uses 'sudo' to start the sandbox."
-echo "For a seamless experience on Steam, you may need to configure"
-echo "passwordless sudo for the command below."
-echo ""
-echo "COMMAND:" 
-echo "  ${CMD[*]}"
+echo "[BarrierLayer] Executable is now at: $SANDBOX_EXE_PATH"
+echo "[BarrierLayer] Injecting anti-cheat hooks..."
+echo "[BarrierLayer] Launching..."
 echo "-----------------------------------------------------------------"
 
-# Execute the command
-exec "${CMD[@]}"
+# 3. Run the executable directly with Wine (without bwrap/firejail sandbox)
+WINEPREFIX="$FAKE_C_DRIVE" \
+DISPLAY="$DISPLAY" \
+LD_PRELOAD="/barrierlayer_bin/barrierlayer_hook64.so:/barrierlayer_bin/barrierlayer_hook32.so" \
+wine "$SANDBOX_EXE_PATH"
+
+EXIT_CODE=$?
+echo "-----------------------------------------------------------------"
+echo "[BarrierLayer] Process exited with code: $EXIT_CODE"
+
+# 4. Clean up the copied executable
+echo "[BarrierLayer] Cleaning up..."
+rm "$VIRTUAL_DESKTOP/$EXE_FILENAME"
+
+exit $EXIT_CODE

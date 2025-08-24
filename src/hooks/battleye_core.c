@@ -14,6 +14,14 @@ int handle_be_memory_check(void* addr, size_t size);
 void protect_be_memory_region(void* addr);
 void install_be_hooks(void);
 void setup_be_memory_protection(void);
+// STUB: Empty implementation to fix linker error
+void add_to_monitoring_list(void* addr) {
+    // This function is missing its implementation in the original code.
+    // We are providing an empty stub to allow the program to run.
+    // The BattlEye memory monitoring feature will not be active.
+    (void)addr; // Suppress unused parameter warning
+}
+
 void add_to_monitoring_list(void* addr);
 
 // Protótipos de funções estáticas

@@ -38,7 +38,7 @@ static void setup_network_isolation(void) {
 int initialize_sandbox(void) {
     printf("SANDBOX_CORE: Initializing final settings in child.\n");
     
-    setup_seccomp_filters();
+    // setup_seccomp_filters();
     setup_network_isolation();
 
     return 0;

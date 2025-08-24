@@ -21,6 +21,14 @@ typedef struct {
 static void setup_protected_regions(void);
 static void install_eac_hooks(void);
 static void generate_valid_signatures(void);
+// STUB: Empty implementation to fix linker error
+int simulate_clean_environment(void) {
+    // This function is missing its implementation in the original code.
+    // We are providing an empty stub to allow the program to run.
+    // The EAC environment simulation will not be active.
+    return 0; // Assuming 0 indicates success/clean environment
+}
+
 int simulate_clean_environment(void);
 static void spoof_eac_driver(void);
 static void setup_memory_protections(void);
