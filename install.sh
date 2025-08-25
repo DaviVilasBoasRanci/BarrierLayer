@@ -1,117 +1,90 @@
 #!/bin/bash
 
-# --- Configuration ---
-INSTALL_PREFIX="/usr/local"
-BIN_DIR="$INSTALL_PREFIX/bin"
-LIB_DIR="$INSTALL_PREFIX/lib"
-SHARE_DIR="$INSTALL_PREFIX/share/barrierlayer"
-KERNEL_MODULE_NAME="barrierlayer_minimal" # From kernel/barrierlayer_minimal.ko
+# Installation script for the BarrierLayer command
 
-# --- Colors for output ---
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+SOURCE_FILE="$SCRIPT_DIR/barrierlayer"
+DEST_DIR="/usr/local/bin"
+DEST_FILE="$DEST_DIR/barrierlayer"
 
-# --- Helper Functions ---
-log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+echo "This script will install the 'barrierlayer' command to your system."
 
-check_sudo() {
-    if [[ "$EUID" -ne 0 ]]; then
-        log_error "This script requires root privileges. Please run with sudo."
-        exit 1
-    fi
-}
+# Check if the source file exists
+if [ ! -f "$SOURCE_FILE" ]; then
+    echo "ERROR: The source file was not found at $SOURCE_FILE"
+    echo "Please run this script from the project's root directory."
+    exit 1
+fi
 
-# --- Main Installation Logic ---
-main() {
-    check_sudo
+# Check if the destination directory exists and is in the PATH
+if ! [[ ":$PATH:" == *":$DEST_DIR:"* ]]; then
+    echo "WARNING: $DEST_DIR is not in your PATH."
+    echo "You may not be able to run the 'barrierlayer' command directly after installation."
+fi
 
-    log_info "Starting BarrierLayer automated installation..."
+echo "The command will be installed to $DEST_FILE"
+echo "This may require administrative privileges (sudo)."
+echo ""
 
-    # 1. Build BarrierLayer
-    log_info "Building BarrierLayer components..."
-    if ! make; then
-        log_error "BarrierLayer build failed. Please check the output above."
-        exit 1
-    fi
-    log_success "BarrierLayer components built successfully."
+# Make the source file executable first
+echo "Making the 'barrierlayer' script executable..."
+chmod +x "$SOURCE_FILE"
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to make the script executable."
+    exit 1
+fi
 
-    # 2. Install Userspace Components (using make install)
-    log_info "Installing userspace components to $INSTALL_PREFIX..."
-    if ! make install; then
-        log_error "Userspace installation failed. Please check the output above."
-        exit 1
-    fi
-    log_success "Userspace components installed."
+#!/bin/bash
 
-    # 3. Kernel Module Installation and Loading
-    log_info "Checking for kernel module installation..."
-    # Read BUILD_KERNEL from config.mk
-    BUILD_KERNEL=$(grep "^BUILD_KERNEL =" config.mk | cut -d'=' -f2 | sed 's/^[[:space:]]*//')
-    if [[ "$BUILD_KERNEL" == "Y" ]]; then
-        log_info "Kernel module build is enabled. Installing and loading kernel module..."
-        KERNEL_MODULE_PATH="/lib/modules/$(uname -r)/extra/$KERNEL_MODULE_NAME.ko"
-        
-        # Copy module
-        if ! cp kernel/$KERNEL_MODULE_NAME.ko "$KERNEL_MODULE_PATH"; then
-            log_error "Failed to copy kernel module. Aborting kernel module installation."
-        else
-            log_success "Kernel module copied to $KERNEL_MODULE_PATH."
-            # Update module dependencies
-            log_info "Updating kernel module dependencies..."
-            if ! depmod -a; then
-                log_warn "Failed to update kernel module dependencies. Module might not load correctly."
-            else
-                log_success "Kernel module dependencies updated."
-            fi
+# Installation script for the bl-run command
 
-            # Load module
-            log_info "Loading kernel module..."
-            if ! modprobe "$KERNEL_MODULE_NAME"; then
-                log_error "Failed to load kernel module. You might need to load it manually: 'sudo modprobe $KERNEL_MODULE_NAME'."
-            else
-                log_success "Kernel module loaded successfully."
-                # Add to modules-load.d for automatic loading on boot
-                log_info "Configuring kernel module to load on boot..."
-                echo "$KERNEL_MODULE_NAME" | sudo tee "/etc/modules-load.d/$KERNEL_MODULE_NAME.conf" > /dev/null
-                log_success "Kernel module configured for automatic loading on boot."
-            fi
-        fi
-    else
-        log_info "Kernel module build is disabled. Skipping kernel module installation."
-    fi
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+SOURCE_FILE="$SCRIPT_DIR/bl-run"
+DEST_DIR="/usr/local/bin"
+DEST_FILE="$DEST_DIR/bl-run"
 
-    # 4. Create Aliases
-    log_info "Creating shell aliases..."
-    SHELL_RC_FILE=""
-    if [[ -f "$HOME/.bashrc" ]]; then
-        SHELL_RC_FILE="$HOME/.bashrc"
-    elif [[ -f "$HOME/.zshrc" ]]; then
-        SHELL_RC_FILE="$HOME/.zshrc"
-    else
-        log_warn "Could not find .bashrc or .zshrc. Please add aliases manually."
-    fi
+echo "This script will install the 'bl-run' command to your system."
 
-    if [[ -n "$SHELL_RC_FILE" ]]; then
-        {
-            echo ""
-            echo "# BarrierLayer Aliases"
-            echo "alias barrierlayer=\"$BIN_DIR/barrierlayer\""
-            echo "alias barrierlayer-gui=\"$BIN_DIR/barrierlayer_gui\""
-            echo "alias barrierlayer-config=\"make -C $(pwd) configs\" # Use absolute path for make configs"
-            echo "alias barrierlayer-uninstall=\"sudo make -C $(pwd) uninstall\" # Use absolute path for make uninstall"
-        } >> "$SHELL_RC_FILE"
-        log_success "Aliases added to $SHELL_RC_FILE. Please run 'source $SHELL_RC_FILE' or restart your terminal."
-    fi
+# Check if the source file exists
+if [ ! -f "$SOURCE_FILE" ]; then
+    echo "ERROR: The source file was not found at $SOURCE_FILE"
+    echo "Please run this script from the project's root directory."
+    exit 1
+fi
 
-    log_success "BarrierLayer installation complete!"
-    log_info "You can now use 'barrierlayer', 'barrierlayer-gui', 'barrierlayer-config' (after sourcing your shell RC file)."
-}
+# Check if the destination directory exists and is in the PATH
+if ! [[ ":$PATH:" == *":$DEST_DIR:"* ]]; then
+    echo "WARNING: $DEST_DIR is not in your PATH."
+    echo "You may not be able to run the 'bl-run' command directly after installation."
+fi
 
-# --- Run Main Function ---
-main "$@"
+echo "The command will be installed to $DEST_FILE"
+echo "This may require administrative privileges (sudo)."
+echo ""
+
+# Make the source file executable first
+echo "Making the 'bl-run' script executable..."
+chmod +x "$SOURCE_FILE"
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to make the script executable."
+    exit 1
+fi
+
+# Copy the file using sudo
+if sudo cp "$SOURCE_FILE" "$DEST_FILE"; then
+    echo ""
+    echo "'bl-run' command installed successfully!"
+    echo "You can now run your applications using:"
+    echo "  bl-run /path/to/your/game.exe"
+else
+    echo ""
+    echo "ERROR: Failed to install the command."
+    echo "Please try running this script with sudo: sudo ./install.sh"
+    exit 1
+fi
+
+exit 0
+
+exit 0

@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# Wrapper script for BarrierLayer to simplify execution
+
+# Find the real path of the main execution script, even if this command is a symlink.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
+  DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE" # if $SOURCE was a relative symlink, resolve it relative to the symlink's location
+done
+SCRIPT_DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+
+# This assumes the 'bl-run' command and the 'scripts' folder are in the same root directory.
+RUN_SCRIPT_PATH="$SCRIPT_DIR/scripts/run_with_barrierlayer.sh"
+
+print_usage() {
+  echo "Usage: bl-run <path_to_executable.exe>"
+}
+
+# The first argument is the application path
+APP_PATH="$1"
+
+# Check if the application path was provided
+if [ -z "$APP_PATH" ]; then
+    echo "Error: Missing path to executable." 1>&2
+    print_usage
+    exit 1
+fi
+
+# Check if the main run script exists
+if [ ! -f "$RUN_SCRIPT_PATH" ]; then
+    echo "Error: The main execution script was not found at $RUN_SCRIPT_PATH" 1>&2
+    echo "Please ensure the command is installed correctly and the project structure is intact." 1>&2
+    exit 1
+fi
+
+# Execute the main script with the provided application path
+bash "$RUN_SCRIPT_PATH" "$APP_PATH"

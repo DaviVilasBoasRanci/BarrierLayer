@@ -14,6 +14,8 @@
 #include "../include/ultra_logger.h"
 #include "../include/performance.h"
 #include "../include/file_hooks.h"
+#include "gdi_hooks.h" // New include
+#include "user32_hooks.h" // New include
 
 #define MAX_RULES 100
 #define MAX_LINE_LEN 256
@@ -192,6 +194,10 @@ void file_hooks_init() {
         snprintf(config_path, sizeof(config_path), "./files.conf");
     }
     load_file_hook_config(config_path);
+
+    // Initialize GDI and User32 hooks
+    init_gdi_hooks();
+    init_user32_hooks();
 
     // Stealth techniques
     // unsetenv("LD_PRELOAD"); // Comentado para depuração

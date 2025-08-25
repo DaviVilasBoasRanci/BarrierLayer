@@ -32,11 +32,11 @@ BASE_LDFLAGS = -Wl,-z,relro,-z,now -ldl -lseccomp -pthread
 # --- Architecture Specific Flags ---
 # 64-bit (default)
 CFLAGS64 = $(BASE_CFLAGS)
-LDFLAGS64 = $(BASE_LDFLAGS)
+LDFLAGS64 = $(LDFLAGS64)
 
 # 32-bit
 CFLAGS32 = $(BASE_CFLAGS) -m32
-LDFLAGS32 = $(BASE_LDFLAGS) -m32
+LDFLAGS32 = $(LDFLAGS32) -m32
 
 # --- Directories ---
 SRC_DIR = src
@@ -64,7 +64,7 @@ SANDBOX_CORE_OBJ64 = $(patsubst $(SRC_DIR)/sandbox/%.c,$(OBJ_DIR64)/sandbox/%.o,
 
 # 32-bit Objects
 CORE_OBJECTS32 = $(patsubst $(CORE_DIR)/%.c,$(OBJ_DIR32)/core/%.o,$(CORE_SOURCES))
-HOOK_OBJECTS32 = $(patsubst $(HOOK_DIR)/%.c,$(OBJ_DIR32)/hooks/%.o,$(HOOK_SOURCES))
+Hook_OBJECTS32 = $(patsubst $(HOOK_DIR)/%.c,$(OBJ_DIR32)/hooks/%.o,$(HOOK_SOURCES))
 SANDBOX_CORE_OBJ32 = $(patsubst $(SRC_DIR)/sandbox/%.c,$(OBJ_DIR32)/sandbox/%.o,$(SANDBOX_CORE_SRC))
 
 
@@ -99,6 +99,15 @@ $(OBJ_DIR64)/hooks/%.o: $(HOOK_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS64) -c $< -o $@
 
+# Specific rules for GDI and User32 hooks (64-bit) to include MinGW headers
+$(OBJ_DIR64)/hooks/gdi_hooks.o: $(HOOK_DIR)/gdi_hooks.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS64) -I/usr/x86_64-w64-mingw32/include/ -c $< -o $@
+
+$(OBJ_DIR64)/hooks/user32_hooks.o: $(HOOK_DIR)/user32_hooks.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS64) -I/usr/x86_64-w64-mingw32/include/ -c $< -o $@
+
 $(OBJ_DIR64)/sandbox/%.o: $(SRC_DIR)/sandbox/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS64) -c $< -o $@
@@ -110,6 +119,15 @@ $(OBJ_DIR32)/core/%.o: $(CORE_DIR)/%.c
 $(OBJ_DIR32)/hooks/%.o: $(HOOK_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS32) -c $< -o $@
+
+# Specific rules for GDI and User32 hooks (32-bit) to include MinGW headers
+$(OBJ_DIR32)/hooks/gdi_hooks.o: $(HOOK_DIR)/gdi_hooks.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS32) -I/usr/i686-w64-mingw32/include/ -c $< -o $@
+
+$(OBJ_DIR32)/hooks/user32_hooks.o: $(HOOK_DIR)/user32_hooks.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS32) -I/usr/i686-w64-mingw32/include/ -c $< -o $@
 
 $(OBJ_DIR32)/sandbox/%.o: $(SRC_DIR)/sandbox/%.c
 	@mkdir -p $(dir $@)
